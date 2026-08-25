@@ -5,6 +5,8 @@
 ### A local-first Android remote workspace that is ready out of the box
 
 [![CI](https://github.com/hakimedes/dsh-easyremote/actions/workflows/ci.yml/badge.svg)](https://github.com/hakimedes/dsh-easyremote/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/@hakimedes/dsh-easyremote.svg?logo=npm)](https://www.npmjs.com/package/@hakimedes/dsh-easyremote)
+[![npm downloads](https://img.shields.io/npm/dm/@hakimedes/dsh-easyremote.svg?logo=npm)](https://www.npmjs.com/package/@hakimedes/dsh-easyremote)
 [![License: MIT](https://img.shields.io/badge/License-MIT-f2c94c.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-22.19%2B-43853d.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Android](https://img.shields.io/badge/Android-7.0%2B-3ddc84.svg?logo=android&logoColor=white)](apps/mobile)
@@ -26,22 +28,11 @@ DSH EasyRemote lets you securely use DeepSeek Harness running on your own comput
 
 ## Project status
 
-The project is currently in public preview. The core path, automated tests, and Community APK are available, while the npm package and GitHub Release have not been formally published yet. Additional physical-device and cross-platform regression testing will continue before the first public release.
+The project is currently in public preview. The public npm package `0.2.0` is available and can be launched directly with `npx`. The Community APK and GitHub Release have not been formally published yet, and additional physical-device and cross-platform regression testing will continue.
 
 ## Quick start without a domain
 
-Install Node.js 22.19 or newer. During the public preview, start from source:
-
-```bash
-git clone https://github.com/hakimedes/dsh-easyremote.git
-cd dsh-easyremote
-corepack enable
-pnpm install --frozen-lockfile
-pnpm build
-node apps/easyremote/dist/cli.js
-```
-
-After the first npm release, the short path will be:
+Install Node.js 22.19 or newer, then run:
 
 ```bash
 npx @hakimedes/dsh-easyremote

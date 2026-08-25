@@ -99,8 +99,8 @@ describe('DSH Hub P0 integration', () => {
     wssUrl = `ws://127.0.0.1:${port}`;
 
     hubProcess = spawn(
-      'node',
-      ['dist/index.js'],
+      process.execPath,
+      ['--import', 'tsx', 'src/index.ts'],
       {
         cwd: process.cwd(),
         env: {

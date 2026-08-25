@@ -5,6 +5,8 @@
 ### 本机优先、开箱即用的 Android 远程工作台
 
 [![CI](https://github.com/hakimedes/dsh-easyremote/actions/workflows/ci.yml/badge.svg)](https://github.com/hakimedes/dsh-easyremote/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/@hakimedes/dsh-easyremote.svg?logo=npm)](https://www.npmjs.com/package/@hakimedes/dsh-easyremote)
+[![npm downloads](https://img.shields.io/npm/dm/@hakimedes/dsh-easyremote.svg?logo=npm)](https://www.npmjs.com/package/@hakimedes/dsh-easyremote)
 [![License: MIT](https://img.shields.io/badge/License-MIT-f2c94c.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-22.19%2B-43853d.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Android](https://img.shields.io/badge/Android-7.0%2B-3ddc84.svg?logo=android&logoColor=white)](apps/mobile)
@@ -26,22 +28,11 @@
 
 ## 项目状态
 
-当前版本处于公开预览阶段。核心流程、自动化测试和 Community APK 已可用，但 npm 与 GitHub Release 尚未正式发布；首次公开发布前仍会继续进行更多真机和跨平台回归。
+当前版本处于公开预览阶段。npm 公共包 `0.2.0` 已发布，可直接通过 `npx` 启动；Community APK 与 GitHub Release 尚未正式发布，后续仍会继续进行更多真机和跨平台回归。
 
 ## 最快开始：不需要域名
 
-需要 Node.js 22.19 或更新版本。当前公开预览版请从源码启动：
-
-```bash
-git clone https://github.com/hakimedes/dsh-easyremote.git
-cd dsh-easyremote
-corepack enable
-pnpm install --frozen-lockfile
-pnpm build
-node apps/easyremote/dist/cli.js
-```
-
-首个 npm 版本发布后可直接执行：
+需要 Node.js 22.19 或更新版本。直接执行：
 
 ```bash
 npx @hakimedes/dsh-easyremote
