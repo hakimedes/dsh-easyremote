@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "DSH EasyRemote",
+    "slug": "dsh-easyremote",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "scheme": "dshremote",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "io.github.hakimedes.dsheasyremote",
+      "infoPlist": {
+        "NSCameraUsageDescription": "DSH Remote uses your camera to scan a DSH pairing QR code."
+      }
+    },
+    "android": {
+      "package": "io.github.hakimedes.dsheasyremote",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "permissions": ["android.permission.CAMERA"],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
+    },
+    "plugins": [
+      "expo-dev-client",
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow DSH EasyRemote to scan your DSH pairing QR code.",
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-secure-store",
+      "expo-local-authentication",
+      "expo-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

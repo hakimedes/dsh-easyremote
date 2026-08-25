@@ -1,0 +1,17 @@
+{
+  "name": "dsh-easyremote",
+  "private": true,
+  "version": "0.2.0",
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r run build",
+    "start": "pnpm -C apps/hub start",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -C apps/hub exec tsc --noEmit -p tsconfig.json && pnpm -C apps/dsh-plugin exec tsc --noEmit -p tsconfig.json && pnpm -C apps/easyremote exec tsc --noEmit -p tsconfig.json && pnpm -C apps/mobile typecheck",
+    "pack:community": "pnpm -C apps/easyremote build && pnpm -C apps/easyremote pack --pack-destination ../../dist"
+  },
+  "workspaces": [
+    "apps/*"
+  ]
+}

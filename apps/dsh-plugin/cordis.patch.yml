@@ -1,0 +1,3 @@
+- insert:
+    - id: dsh-easyremote-connector
+      name: '@hakimedes/dsh-easyremote-connector'

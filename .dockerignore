@@ -1,0 +1,16 @@
+.git
+.agents
+.codex
+.env
+.env.*
+!.env.example
+!.env.hub.example
+node_modules
+dist
+data
+apps/mobile/android/.gradle
+apps/mobile/android/app/build
+apps/mobile/node_modules
+apps/*/node_modules
+apps/*/dist
+apps/*/lib

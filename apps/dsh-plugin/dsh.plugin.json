@@ -1,0 +1,16 @@
+{
+  "name": "@hakimedes/dsh-easyremote-connector",
+  "description": "Connect DeepSeek Harness to DSH EasyRemote over an outbound WebSocket.",
+  "version": "0.2.0",
+  "entry": {
+    "name": "@hakimedes/dsh-easyremote-connector",
+    "inject": [
+      "webServer",
+      "agents",
+      "sessionQuery",
+      "agentDefaultModel",
+      "approval",
+      "apiProxy"
+    ]
+  }
+}
