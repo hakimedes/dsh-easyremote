@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
@@ -276,6 +276,7 @@ const ctx = {
 
 async function main() {
   process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'dsh-plugin-e2e-'));
+  process.env.DSH_EASYREMOTE_CONFIG_PATH = join(process.env.DSH_HOME, 'connector.json');
   process.env.DSH_REMOTE_HUB_URL = HUB_BASE;
   process.env.DSH_REMOTE_NODE_NAME = 'DSH Plugin E2E';
 
@@ -283,6 +284,15 @@ async function main() {
   apply(ctx);
 
   const pairing = await eventually(() => pairingPayload);
+  const handoffPath = join(process.env.DSH_HOME, 'pairing.json');
+  const handoff = await eventually(() => {
+    if (!existsSync(handoffPath)) return null;
+    const value = JSON.parse(readFileSync(handoffPath, 'utf8'));
+    return value.qrPayload === pairing.qrPayload ? value : null;
+  });
+  if (handoff.status !== 'pairing' || handoff.pairingExpiresAt !== pairing.expiresAt) {
+    throw new Error('Connector did not publish the live pairing handoff');
+  }
   const claim = await json(`${HUB_BASE}/v1/node-pairings/claim`, {
     method: 'POST',
     body: JSON.stringify({
@@ -299,12 +309,21 @@ async function main() {
   });
 
   const connectedPage = await invokeRoute('/__dsh_remote_v1/pair');
-  if (!connectedPage.body.includes('Reconnect mobile')) throw new Error('connected page has no mobile recovery action');
+  if (!connectedPage.body.includes('Generate connection QR')) throw new Error('connected page has no mobile recovery action');
   const recoveryRedirect = await invokeRoute('/__dsh_remote_v1/recover', 'POST');
   if (recoveryRedirect.status !== 303 || recoveryRedirect.headers.location !== '/__dsh_remote_v1/pair') {
     throw new Error('mobile recovery action did not redirect to the pairing page');
   }
-  const recovery = await eventually(() => recoveryPayload);
+  const staleRecovery = await eventually(() => recoveryPayload);
+  const refreshedRedirect = await invokeRoute('/__dsh_remote_v1/recover', 'POST');
+  if (refreshedRedirect.status !== 303) throw new Error('mobile recovery refresh failed');
+  const recovery = await eventually(() => recoveryPayload?.pairingId !== staleRecovery.pairingId ? recoveryPayload : null);
+  const staleClaim = await nativeFetch(`${HUB_BASE}/v1/node-pairings/claim`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pairToken: staleRecovery.pairToken, deviceName: 'Stale Android' }),
+  });
+  if (staleClaim.status !== 410) throw new Error('refresh did not expire the previous recovery QR');
   const recoveryToken = new URL(recovery.qrPayload).searchParams.get('token');
   if (!recoveryToken) throw new Error('recovery QR did not contain a pairing token');
   const restored = await json(`${HUB_BASE}/v1/node-pairings/claim`, {

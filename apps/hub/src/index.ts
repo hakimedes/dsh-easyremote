@@ -796,6 +796,10 @@ app.post('/v1/node-pairings', async (request, reply) => {
   const expiresAt = now + 5 * 60_000;
 
   sqlite
+    .prepare("UPDATE node_pairings SET expires_at = ? WHERE install_id = ? AND status = 'pending' AND expires_at > ?")
+    .run(now, body.installId, now);
+
+  sqlite
     .prepare(
       `INSERT INTO node_pairings (
       id, pair_token_hash, poll_token_hash, install_id, node_name, platform, arch, plugin_version,
@@ -839,6 +843,10 @@ app.post('/v1/node-pairings/recover', async (request, reply) => {
   const pollToken = randomHex(32);
   const now = nowMs();
   const expiresAt = now + 5 * 60_000;
+
+  sqlite
+    .prepare("UPDATE node_pairings SET expires_at = ? WHERE node_id = ? AND status = 'pending' AND expires_at > ?")
+    .run(now, node.id, now);
 
   sqlite
     .prepare(

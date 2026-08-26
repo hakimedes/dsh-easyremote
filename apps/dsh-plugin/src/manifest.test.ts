@@ -14,4 +14,14 @@ describe('DSH plugin manifest', () => {
     expect(manifest.entry.name).toBe(pkg.name);
     expect(manifest.entry.inject).toContain('apiProxy');
   });
+
+  it('registers the browser client under the published package id', () => {
+    const root = resolve(import.meta.dirname, '..');
+    const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
+    const client = readFileSync(resolve(root, 'client-bundle', 'client.js'), 'utf8');
+
+    expect(client).toContain(`window.__ModuleLoader__.load({ id: '${pkg.name}'`);
+    expect(client).toContain("slots.inject('settings.section'");
+    expect(client).toContain('Refresh connection QR');
+  });
 });

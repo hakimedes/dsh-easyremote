@@ -28,7 +28,7 @@ DSH EasyRemote lets you securely use DeepSeek Harness running on your own comput
 
 ## Project status
 
-The project is currently in public preview. The public npm package `0.2.0` is available and can be launched directly with `npx`. The Community APK and GitHub Release have not been formally published yet, and additional physical-device and cross-platform regression testing will continue.
+The project is currently in public preview. The public npm package and long-term-signed Community APK `0.2.0` are available now. Launch setup with `npx` or download Android assets from [GitHub Releases](https://github.com/hakimedes/dsh-easyremote/releases). Additional physical-device and cross-platform regression testing will continue.
 
 ## Quick start without a domain
 
@@ -43,7 +43,7 @@ The first run opens a setup wizard that is available only on localhost:
 - **Quick Start** downloads and verifies `cloudflared`, then starts the local Hub with a temporary Quick Tunnel. No account or domain is required. A new `trycloudflare.com` address is generated after every restart, so the phone must scan a fresh recovery QR.
 - **Deep Configuration** reuses the same Hub, database, and device identities while configuring your domain, a Cloudflare Named Tunnel, and a current-user login service.
 
-The wizard also shows a Community APK download QR. When exactly one authorized Android device is connected through ADB, the APK can be installed directly from the wizard.
+The wizard follows a single sequence: download the APK, establish the Hub connection, then scan the live pairing QR. When exactly one authorized Android device is connected through ADB, the APK can be installed directly. Later, **Settings → Remote** in DSH Web can generate or refresh a one-time connection QR; issuing a new QR immediately expires the previous one.
 
 ## Fixed-domain mode
 
@@ -99,7 +99,7 @@ Read the [privacy model](docs/PRIVACY.md) and [threat model](docs/THREAT_MODEL.m
 
 ## Android builds
 
-GitHub Releases will provide the independently signed Community APK, SHA-256 checksums, and release notes. Community builds can connect to any HTTPS Hub explicitly confirmed by the user. Internal builds remain separate with an independent application ID and signature, so both variants can be installed side by side.
+GitHub Releases provide the independently signed Community APK, SHA-256 checksums, and release notes. Community builds can connect to any HTTPS Hub explicitly confirmed by the user. Internal builds remain separate with an independent application ID and signature, so both variants can be installed side by side.
 
 Always verify the downloaded APK against `SHA256SUMS`. Version 1 does not include an iOS App Store build.
 

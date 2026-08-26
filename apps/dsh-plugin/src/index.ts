@@ -57,6 +57,18 @@ type PairingState = {
   expiresAt: number;
 };
 
+type PairingHandoff = {
+  schemaVersion: 1;
+  status: string;
+  hub: string;
+  nodeName: string;
+  nodeId: string | null;
+  qrPayload?: string;
+  pairingExpiresAt: number | null;
+  error: string | null;
+  updatedAt: number;
+};
+
 type CommandFrame = {
   v: number;
   kind: 'command';
@@ -143,24 +155,29 @@ const PAIR_PAGE_SCRIPT = `<script>
     if (!data) return;
     var qr = el('q');
     var form = el('rc');
+    var button = el('rb');
     var pill = el('s');
     if (pill) pill.textContent = String(data.status || '');
     if (pill) pill.className = 'pill ' + String(data.status || '');
-    var title = data.nodeId ? 'DSH Remote connected'
-      : data.qrSvg ? (data.recovering ? 'Reconnect DSH Mobile' : 'Scan with DSH Mobile')
+    var title = data.recovering && data.qrSvg ? 'Reconnect DSH Mobile'
+      : data.nodeId ? 'DSH Remote connected'
+      : data.qrSvg ? 'Scan with DSH Mobile'
       : (data.error ? 'Hub unreachable' : 'Preparing pairing QR…');
     setText('t', title);
     document.title = title;
     if (qr) {
       if (data.qrSvg) {
-        if (qr.dataset.svg !== '1') { qr.innerHTML = data.qrSvg; qr.dataset.svg = '1'; }
-      } else { qr.innerHTML = ''; qr.dataset.svg = ''; }
+        var qrKey = String(data.pairingExpiresAt || 'live');
+        if (qr.dataset.key !== qrKey) { qr.innerHTML = data.qrSvg; qr.dataset.key = qrKey; }
+      } else { qr.innerHTML = ''; qr.dataset.key = ''; }
     }
-    var hint = data.nodeId ? 'Remote access is active. Use Nodes in the mobile app to revoke it.'
-      : data.qrSvg ? (data.recovering ? 'Scan this one-time QR to restore access on a phone that was previously paired.' : 'The QR is one-time and expires after five minutes. This page refreshes itself.')
+    var hint = data.recovering && data.qrSvg ? 'Scan this one-time QR to restore access on a phone that was previously paired.'
+      : data.nodeId ? 'Remote access is active. Use Nodes in the mobile app to revoke it.'
+      : data.qrSvg ? 'The QR is one-time and expires after five minutes. This page refreshes itself.'
       : (data.error ? 'Will keep retrying in the background. Last error: ' + data.error : 'Waiting for the Hub…');
     setText('hint', hint);
-    if (form) form.hidden = !(data.nodeId && !data.qrSvg);
+    if (form) form.hidden = !data.nodeId;
+    if (button) button.textContent = data.qrSvg ? 'Refresh connection QR' : 'Generate connection QR';
     countdown(now);
   }
   async function tick() {
@@ -212,6 +229,7 @@ class HubConnector {
   private defaultCwd?: string;
   private readonly dshVersion: string;
   private readonly configPath: string;
+  private readonly pairingStatePath: string;
   private configWatchDisposer: (() => void) | null = null;
   private readonly identityPath: string;
   private identity: Identity;
@@ -240,6 +258,7 @@ class HubConnector {
 
   constructor(private readonly ctx: any) {
     this.configPath = connectorConfigPath();
+    this.pairingStatePath = join(dirname(this.configPath), 'pairing.json');
     const config = loadConnectorConfig({ path: this.configPath, fallbackNodeName: hostname() });
     this.hubUrl = config.hubUrl;
     this.hubWsUrl = wsUrl(this.hubUrl);
@@ -277,6 +296,7 @@ class HubConnector {
     }
     if (this.identity.nodeId) this.connect();
     else void this.ensurePairing();
+    this.publishPairingState();
     this.logger.info(`[dsh-easyremote] Hub connector active; scan /__dsh_remote_v1/pair in DSH Web`);
   }
 
@@ -288,6 +308,8 @@ class HubConnector {
     this.configWatchDisposer = null;
     this.socket?.close(1000, 'plugin disposed');
     this.socket = null;
+    this.connectionStatus = 'offline';
+    this.publishPairingState();
     for (const approval of [...this.pendingApprovals.values()]) approval.settle('cancelled');
     for (const dispose of this.routeDisposers) {
       try { dispose(); } catch {}
@@ -351,6 +373,31 @@ class HubConnector {
     chmodSync(this.identityPath, 0o600);
   }
 
+  private publishPairingState() {
+    try {
+      const fresh = this.pairing && this.pairing.expiresAt > Date.now() ? this.pairing : null;
+      const handoff: PairingHandoff = {
+        schemaVersion: 1,
+        status: this.connectionStatus,
+        hub: this.hubUrl,
+        nodeName: this.nodeName,
+        nodeId: this.identity.nodeId ?? null,
+        ...(fresh ? { qrPayload: fresh.qrPayload } : {}),
+        pairingExpiresAt: fresh?.expiresAt ?? null,
+        error: this.lastPairingError,
+        updatedAt: Date.now(),
+      };
+      mkdirSync(dirname(this.pairingStatePath), { recursive: true, mode: 0o700 });
+      const temporaryPath = `${this.pairingStatePath}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+      writeFileSync(temporaryPath, `${JSON.stringify(handoff, null, 2)}\n`, { mode: 0o600 });
+      if (process.platform !== 'win32') chmodSync(temporaryPath, 0o600);
+      renameSync(temporaryPath, this.pairingStatePath);
+      if (process.platform !== 'win32') chmodSync(this.pairingStatePath, 0o600);
+    } catch (error) {
+      this.logger.warn(`[dsh-easyremote] pairing handoff unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   private registerRoutes() {
     if (!this.webServer) return;
     const safeRegister = (path: string, handler: (req: IncomingMessage, res: ServerResponse) => unknown) => {
@@ -403,7 +450,7 @@ class HubConnector {
             ? `Will keep retrying in the background. Last error: ${data.error}`
             : 'The QR is one-time and expires after five minutes. This page refreshes itself.';
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-      res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>${html(title)}</title><style>body{font-family:system-ui;background:#0d1117;color:#f4f5f7;margin:0;min-height:100vh;display:grid;place-items:center}.card{max-width:420px;text-align:center;padding:28px;border:1px solid #30363d;border-radius:18px;background:#161b22}.qr{background:white;padding:14px;border-radius:14px;line-height:0;margin:20px auto;max-width:300px;min-height:120px;display:flex;align-items:center;justify-content:center}.pill{display:inline-block;border-radius:999px;padding:3px 12px;font-size:12px;font-weight:700;background:#21262d;color:#9da7b3}.pill.online{background:#0f3517;color:#4ade80}.pill.pairing,.pill.connecting{background:#33270f;color:#fbbf24}p{color:#9da7b3;line-height:1.5}code{font-size:12px}button{border:0;border-radius:12px;background:#4d6bfe;color:white;font:600 16px system-ui;padding:12px 18px;cursor:pointer}.count{font-size:13px;color:#6e7681}</style><main class="card"><h1 id="t">${html(title)}</h1><span class="pill" id="s">${html(data.status)}</span>${qr ? `<div class="qr" id="q">${qr}</div>` : '<div class="qr" id="q"></div>'}<p id="n">${html(this.nodeName)}</p><p><code id="h">${html(this.hubUrl)}</code></p><p id="hint">${html(hint)}</p><p class="count" id="c"></p><form id="rc" method="post" action="/__dsh_remote_v1/recover"${data.nodeId && !qr ? '' : ' hidden'}><button type="submit">Reconnect mobile</button></form></main>${PAIR_PAGE_SCRIPT}`);
+      res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>${html(title)}</title><style>body{font-family:system-ui;background:#0d1117;color:#f4f5f7;margin:0;min-height:100vh;display:grid;place-items:center}.card{max-width:420px;text-align:center;padding:28px;border:1px solid #30363d;border-radius:18px;background:#161b22}.qr{background:white;padding:14px;border-radius:14px;line-height:0;margin:20px auto;max-width:300px;min-height:120px;display:flex;align-items:center;justify-content:center}.pill{display:inline-block;border-radius:999px;padding:3px 12px;font-size:12px;font-weight:700;background:#21262d;color:#9da7b3}.pill.online{background:#0f3517;color:#4ade80}.pill.pairing,.pill.connecting{background:#33270f;color:#fbbf24}p{color:#9da7b3;line-height:1.5}code{font-size:12px}button{border:0;border-radius:12px;background:#4d6bfe;color:white;font:600 16px system-ui;padding:12px 18px;cursor:pointer}.count{font-size:13px;color:#6e7681}</style><main class="card"><h1 id="t">${html(title)}</h1><span class="pill" id="s">${html(data.status)}</span>${qr ? `<div class="qr" id="q">${qr}</div>` : '<div class="qr" id="q"></div>'}<p id="n">${html(this.nodeName)}</p><p><code id="h">${html(this.hubUrl)}</code></p><p id="hint">${html(hint)}</p><p class="count" id="c"></p><form id="rc" method="post" action="/__dsh_remote_v1/recover"${data.nodeId ? '' : ' hidden'}><button id="rb" type="submit">${qr ? 'Refresh connection QR' : 'Generate connection QR'}</button></form></main>${PAIR_PAGE_SCRIPT}`);
     });
 
     safeRegister('/__dsh_remote_v1/recover', async (req, res) => {
@@ -418,7 +465,7 @@ class HubConnector {
         return;
       }
       try {
-        await this.ensureRecoveryPairing();
+        await this.refreshRecoveryPairing();
         res.writeHead(303, { location: '/__dsh_remote_v1/pair', 'cache-control': 'no-store' });
         res.end();
       } catch (error) {
@@ -486,6 +533,13 @@ class HubConnector {
     return this.recoveryCreateTask;
   }
 
+  private async refreshRecoveryPairing() {
+    if (this.recoveryCreateTask) await this.recoveryCreateTask;
+    this.pairing = null;
+    this.publishPairingState();
+    await this.ensureRecoveryPairing();
+  }
+
   private async createRecoveryPairing() {
     const nodeId = this.identity.nodeId;
     if (!nodeId) throw new Error('Node is not connected');
@@ -495,6 +549,7 @@ class HubConnector {
       headers: { authorization: `Node ${nodeId}.${this.identity.nodeSecret}` },
     });
     this.pairing = created;
+    this.publishPairingState();
     void this.pollRecoveryPairing(created);
   }
 
@@ -512,6 +567,7 @@ class HubConnector {
       this.logger.warn(`[dsh-remote] mobile recovery polling unavailable: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       if (this.pairing?.pairingId === created.pairingId) this.pairing = null;
+      this.publishPairingState();
     }
   }
 
@@ -519,6 +575,7 @@ class HubConnector {
     while (!this.disposed && !this.identity.nodeId) {
       try {
         this.connectionStatus = 'pairing';
+        this.publishPairingState();
         const created = await this.fetchJson<{
           pairingId: string;
           pollToken: string;
@@ -538,6 +595,7 @@ class HubConnector {
         });
         this.pairing = created;
         this.lastPairingError = null;
+        this.publishPairingState();
         while (!this.disposed && !this.identity.nodeId && Date.now() < created.expiresAt) {
           const polled = await this.fetchJson<{ status: string; nodeId?: string }>(
             `/v1/node-pairings/${encodeURIComponent(created.pairingId)}`,
@@ -547,6 +605,7 @@ class HubConnector {
             this.identity = { ...this.identity, nodeId: polled.nodeId };
             this.saveIdentity();
             this.pairing = null;
+            this.publishPairingState();
             this.connect();
             return;
           }
@@ -556,10 +615,12 @@ class HubConnector {
       } catch (error) {
         this.connectionStatus = 'offline';
         this.lastPairingError = error instanceof Error ? error.message : String(error);
+        this.publishPairingState();
         this.logger.warn(`[dsh-remote] pairing unavailable: ${this.lastPairingError}`);
         await new Promise((resolveWait) => setTimeout(resolveWait, 3_000));
       } finally {
         if (!this.identity.nodeId) this.pairing = null;
+        this.publishPairingState();
       }
     }
   }
@@ -571,6 +632,7 @@ class HubConnector {
       && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)
     ) return;
     this.connectionStatus = 'connecting';
+    this.publishPairingState();
     const socket = new WebSocket(this.hubWsUrl, {
       headers: { authorization: `Node ${this.identity.nodeId}.${this.identity.nodeSecret}` },
       maxPayload: 512 * 1024,
@@ -620,6 +682,7 @@ class HubConnector {
       if (payload.kind === 'node.hello.ack') {
         this.connectionStatus = 'online';
         this.lastPairingError = null;
+        this.publishPairingState();
         this.replayPendingApprovals();
         if (this.rotateRecoveryOnAck) {
           this.rotateRecoveryOnAck = false;
@@ -643,10 +706,12 @@ class HubConnector {
         this.connectionStatus = 'revoked';
         this.identity = { installId: this.identity.installId, nodeSecret: this.identity.nodeSecret };
         this.saveIdentity();
+        this.publishPairingState();
         void this.ensurePairing();
         return;
       }
       this.connectionStatus = 'offline';
+      this.publishPairingState();
       this.scheduleReconnect();
     });
     socket.on('error', () => {

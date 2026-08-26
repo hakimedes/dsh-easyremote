@@ -52,6 +52,8 @@ describe('localhost setup wizard', () => {
     expect(html).toContain('csrf-only');
     expect(html).toContain('Community APK');
     expect(html).toContain('apk-qr');
+    expect(html).toContain('连接手机');
+    expect(html.indexOf('data-stage="apk"')).toBeLessThan(html.indexOf('data-stage="pairing"'));
     expect(html).not.toContain('dsh_easyremote_session');
   });
 
@@ -77,6 +79,16 @@ describe('localhost setup wizard', () => {
     const server = await startWizardServer({
       version: '0.2.0',
       getState: async () => ({ message: 'ready' }),
+      getPairing: async () => ({
+        schemaVersion: 1,
+        status: 'pairing',
+        hub: 'https://dsh.example.com',
+        nodeName: 'Studio Mac',
+        nodeId: null,
+        qrPayload: `dshremote://pair?server=${encodeURIComponent('https://dsh.example.com')}&token=${'a'.repeat(64)}`,
+        pairingExpiresAt: Date.now() + 60_000,
+        updatedAt: Date.now(),
+      }),
       actions: {},
     });
     try {
@@ -89,6 +101,12 @@ describe('localhost setup wizard', () => {
       const response = await fetch(`${server.origin}/api/state`, { headers: { cookie: cookie!.split(';')[0] } });
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toEqual({ message: 'ready' });
+      const pairingResponse = await fetch(`${server.origin}/api/pairing`, { headers: { cookie: cookie!.split(';')[0] } });
+      expect(pairingResponse.status).toBe(200);
+      const pairing = await pairingResponse.json() as Record<string, unknown>;
+      expect(pairing).toMatchObject({ status: 'pairing', nodeName: 'Studio Mac', ready: true });
+      expect(pairing.qrSvg).toContain('<svg');
+      expect(pairing).not.toHaveProperty('qrPayload');
     } finally {
       await server.close();
     }

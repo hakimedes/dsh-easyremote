@@ -1,4 +1,4 @@
-# DSH Remote Hub Connector
+# DSH EasyRemote Connector
 
 Host-side plugin for DeepSeek Harness (`dsh`) 0.1.0-rc.6. It keeps one outbound
 WebSocket connection to a DSH Remote Hub and exposes session list, snapshot,
@@ -30,19 +30,20 @@ only needs outbound HTTPS/WSS access to Hub.
 Install the packaged `.tgz` from this repository:
 
 ```bash
-dsh plugin --profile web add /absolute/path/to/dsh-remote-hub-connector-0.1.1.tgz
+dsh plugin --profile web add /absolute/path/to/hakimedes-dsh-easyremote-connector-0.2.0.tgz
 ```
 
 Then add this entry to `$DSH_HOME/profiles/web/cordis.patch.yml`:
 
 ```yaml
 - insert:
-    - id: dsh-remote-hub-connector
-      name: '@dsh-remote/hub-connector'
+    - id: dsh-easyremote-connector
+      name: '@hakimedes/dsh-easyremote-connector'
 ```
 
-Restart `dsh web`, open the URL printed by DSH, append
-`/__dsh_remote_v1/pair`, and scan the QR with DSH Mobile.
+Restart `dsh web`, then open **Settings → Remote** to scan or refresh the
+one-time QR. The standalone fallback is the URL printed by DSH with
+`/__dsh_remote_v1/pair` appended.
 
 If Mobile has lost its local credential while this node is still connected,
 open the same page and select **Reconnect mobile**. The authenticated connector

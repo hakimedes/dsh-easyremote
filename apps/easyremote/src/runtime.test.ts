@@ -19,6 +19,7 @@ describe('local runtime configuration', () => {
     const paths = createRuntimePaths(root);
     expect(Object.values(paths).every((value) => value.startsWith(root))).toBe(true);
     expect(paths.installState).toBe(join(root, 'install.json'));
+    expect(paths.pairingState).toBe(join(root, 'pairing.json'));
   });
 
   it('always launches Hub on loopback with persistent data and a dynamic entry file', () => {

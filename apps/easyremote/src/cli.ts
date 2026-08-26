@@ -28,6 +28,7 @@ import { normalizeHostname, normalizeNameserver, verifyNameservers } from './dom
 import { loadInstallState } from './install-state.js';
 import { ensureCloudflaredRuntime, findAvailablePort, inspectCloudflaredRuntime, runProcessLaunch, spawnLoggedProcess } from './local-runtime.js';
 import { buildLoginLaunch, provisionNamedTunnel } from './named-tunnel.js';
+import { loadPairingState } from './pairing-state.js';
 import { createRuntimePaths } from './runtime.js';
 import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setup-progress.js';
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
@@ -190,6 +191,7 @@ async function setupCommand() {
       progress: loadSetupProgress(paths.setupProgress),
       message: '本机控制面已就绪。请选择连接路径。',
     }),
+    getPairing: () => loadPairingState(paths.pairingState),
     actions,
   });
   console.log(`DSH EasyRemote setup: ${wizard.launchUrl}`);
@@ -350,6 +352,7 @@ async function openControlConsole(message?: string) {
       progress: loadSetupProgress(paths.setupProgress),
       message: message ?? formatStatus(loadInstallState(paths.installState), true),
     }),
+    getPairing: () => loadPairingState(paths.pairingState),
     actions: { 'apk/install-adb': installApkWizardAction },
   });
   console.log(`DSH EasyRemote console: ${control.launchUrl}`);

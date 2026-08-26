@@ -16,7 +16,7 @@ Primary assets are Hub/Owner identity, Node Secret, Mobile Refresh Token, one-ti
 | Threat | Mitigation |
 | --- | --- |
 | Remote access to setup UI | Loopback-only listener, random bootstrap token, HttpOnly session cookie, Origin/Host checks and CSRF token. |
-| Replay of pairing or setup actions | Short-lived one-time Pair/Recovery Tokens and one-time wizard operation IDs. |
+| Replay of pairing or setup actions | Short-lived one-time Pair/Recovery Tokens, immediate invalidation when a replacement QR is generated, and one-time wizard operation IDs. The local handoff file is owner-readable only and is not included in backups. |
 | Hub substitution | Community app asks the user to confirm HTTPS origin and pins the returned stable `hubId`; mismatches are rejected. |
 | Secret disclosure in source/releases | Restricted credential paths, package file allowlist, secret scanning and tarball audit. |
 | Local Cloudflare config collision | Installer always supplies its own config, credential and log paths. |

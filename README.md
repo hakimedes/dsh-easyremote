@@ -28,7 +28,7 @@
 
 ## 项目状态
 
-当前版本处于公开预览阶段。npm 公共包 `0.2.0` 已发布，可直接通过 `npx` 启动；Community APK 与 GitHub Release 尚未正式发布，后续仍会继续进行更多真机和跨平台回归。
+当前版本处于公开预览阶段。npm 公共包与带长期签名的 Community APK `0.2.0` 已发布，可直接通过 `npx` 启动，并从 [GitHub Releases](https://github.com/hakimedes/dsh-easyremote/releases) 下载 Android 安装包。后续仍会继续进行更多真机和跨平台回归。
 
 ## 最快开始：不需要域名
 
@@ -43,7 +43,7 @@ npx @hakimedes/dsh-easyremote
 - **快速启动**：自动下载并校验 `cloudflared`，启动本机 Hub 和临时 Quick Tunnel，不需要 Cloudflare 账号或域名。每次重启会获得新的 `trycloudflare.com` 地址，需要扫描新的恢复二维码。
 - **深度配置**：复用同一个 Hub、数据库和设备身份，配置自己的固定域名和 Cloudflare Named Tunnel，并安装当前用户登录后自启的服务。
 
-引导页还提供 Community APK 下载二维码；电脑已通过 ADB 连接 Android 手机时，可以直接一键安装。
+引导页按照“下载 APK → 建立连接 → 扫描互联二维码”的顺序完成首次配置。电脑已通过 ADB 连接 Android 手机时，也可以直接一键安装。后续需要重连时，可在 DSH Web 的 **Settings → Remote** 生成或刷新一次性二维码；生成新码会立即使旧码失效。
 
 ## 固定域名模式
 

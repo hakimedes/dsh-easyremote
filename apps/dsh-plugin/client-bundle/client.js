@@ -1,5 +1,5 @@
 /**
- * @dsh-remote/hub-connector — browser client half.
+ * @hakimedes/dsh-easyremote-connector — browser client half.
  *
  * Speaks the dsh module-loader protocol consumed by the client-modules boot
  * graph: the whole file is one `window.__ModuleLoader__.load({ id, factory })`
@@ -17,7 +17,7 @@
  * link out to the full page. Data comes from same-origin
  * GET /__dsh_remote_v1/pair-data; recovery POSTs /__dsh_remote_v1/recover.
  */
-window.__ModuleLoader__.load({ id: '@dsh-remote/hub-connector', factory: (require) => {
+window.__ModuleLoader__.load({ id: '@hakimedes/dsh-easyremote-connector', factory: (require) => {
   var module = { exports: {} };
   var exports = module.exports;
 
@@ -219,7 +219,7 @@ window.__ModuleLoader__.load({ id: '@dsh-remote/hub-connector', factory: (requir
               ? React.createElement('div', { className: 'dsh-remote-warn' },
                 React.createElement('span', null, 'Recovery failed: ' + actionError))
             : null,
-            data.nodeId && !qrSvg
+            data.nodeId
               ? React.createElement(
                 'div',
                 { className: 'dsh-remote-actions' },
@@ -227,9 +227,11 @@ window.__ModuleLoader__.load({ id: '@dsh-remote/hub-connector', factory: (requir
                   className: 'dsh-remote-btn',
                   disabled: busy,
                   onClick: function () { void recover(); },
-                }, busy ? 'Working…' : 'Reconnect mobile'),
+                }, busy ? 'Refreshing…' : qrSvg ? 'Refresh connection QR' : 'Generate connection QR'),
                 React.createElement('span', { className: 'dsh-remote-note' },
-                  'Issues a one-time recovery QR for a previously paired phone.'),
+                  qrSvg
+                    ? 'The previous QR expires immediately when a new one is generated.'
+                    : 'Generate a one-time QR to reconnect DSH Mobile.'),
               )
             : null,
           ),

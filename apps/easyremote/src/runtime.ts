@@ -7,6 +7,7 @@ export type RuntimePaths = {
   installState: string;
   setupProgress: string;
   connectorConfig: string;
+  pairingState: string;
   publicEntry: string;
   dataDir: string;
   database: string;
@@ -42,6 +43,7 @@ export function createRuntimePaths(root: string): RuntimePaths {
     installState: join(root, 'install.json'),
     setupProgress: join(root, 'setup.json'),
     connectorConfig: join(root, 'connector.json'),
+    pairingState: join(root, 'pairing.json'),
     publicEntry: join(root, 'public-origin.json'),
     dataDir,
     database: join(dataDir, 'hub.sqlite'),

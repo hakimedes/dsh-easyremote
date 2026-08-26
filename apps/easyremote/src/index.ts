@@ -9,6 +9,7 @@ export * from './domain.js';
 export * from './install-state.js';
 export * from './maintenance.js';
 export * from './named-tunnel.js';
+export * from './pairing-state.js';
 export * from './runtime.js';
 export * from './setup-progress.js';
 export * from './supervisor.js';

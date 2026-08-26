@@ -14,7 +14,8 @@ dsh-easyremote doctor
 | Tunnel name already exists | Verify the browser authorized the intended Cloudflare account. Re-enter setup; the installer reuses a matching local Tunnel ID and does not delete unknown tunnels. |
 | Fixed hostname has a DNS conflict | Remove or rename the conflicting A/AAAA/CNAME record in Cloudflare, then retry the DNS route step. |
 | Connector stays offline | Restart DSH, inspect `~/.dsh-easyremote/connector.json`, and check that its `hubUrl` equals `status` output. |
-| Phone remains on pairing screen | Generate a fresh one-time recovery QR from the current setup/control page. Expired tokens cannot be reused. |
+| Connection QR does not appear in setup | Restart DSH Web once after the Connector is first installed. The setup page polls `~/.dsh-easyremote/pairing.json` automatically. |
+| Phone remains on pairing screen | Open DSH Web **Settings → Remote** and select **Generate connection QR** or **Refresh connection QR**. Expired or replaced tokens cannot be reused. |
 | Hub ID mismatch | Do not proceed unless this is an intentional new installation. Sign out before changing Hub; a recovery QR is valid only for the same Hub identity. |
 | Service does not start after login | Run `doctor`; inspect LaunchAgent, `systemctl --user status dsh-easyremote`, or the current user's scheduled task. No root service is installed. |
 | Port is occupied | Restart through the CLI. It selects a free loopback port, persists it and rewrites the Tunnel target. |

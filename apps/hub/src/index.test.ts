@@ -231,9 +231,20 @@ describe('DSH Hub P0 integration', () => {
       authorization: `Bearer ${accessToken}`,
     });
 
+    const staleRecovery = await postJson(`${baseUrl}/v1/node-pairings/recover`, {}, {
+      authorization: `Node ${nodeId}.${nodeSecret}`,
+    });
     const recovery = await postJson(`${baseUrl}/v1/node-pairings/recover`, {}, {
       authorization: `Node ${nodeId}.${nodeSecret}`,
     });
+    const staleClaim = await fetch(`${baseUrl}/v1/node-pairings/claim`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pairToken: staleRecovery.pairToken, deviceName: 'Stale Android phone' }),
+    });
+    expect(staleClaim.status).toBe(410);
+    await expect(staleClaim.json()).resolves.toMatchObject({ code: 'PAIR_TOKEN_EXPIRED' });
+
     const restored = await postJson(`${baseUrl}/v1/node-pairings/claim`, {
       pairToken: recovery.pairToken,
       deviceName: 'Restored Android phone',
