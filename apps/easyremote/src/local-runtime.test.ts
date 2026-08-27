@@ -7,6 +7,7 @@ import {
   captureProcessLaunch,
   ensureCloudflaredRuntime,
   findAvailablePort,
+  runProcessLaunch,
   spawnLoggedProcess,
 } from './local-runtime.js';
 import { createRuntimePaths } from './runtime.js';
@@ -54,5 +55,17 @@ describe('default local runtime adapters', () => {
       command: process.execPath,
       args: ['-e', "process.stdout.write('profile-directory')"],
     })).resolves.toBe('profile-directory');
+  });
+
+  it('includes child stderr when an interactive command fails', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await expect(runProcessLaunch({
+        command: process.execPath,
+        args: ['-e', "process.stderr.write('pnpm not found on PATH'); process.exit(127)"],
+      }, true)).rejects.toThrow('Command failed (127): pnpm not found on PATH');
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });

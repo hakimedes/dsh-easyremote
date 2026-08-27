@@ -112,11 +112,15 @@ export function runProcessLaunch(launch: ProcessLaunch, interactive = false): Pr
   return new Promise((resolve, reject) => {
     const child = crossSpawn(launch.command, launch.args, {
       env: launch.env ?? process.env,
-      stdio: interactive ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+      stdio: [interactive ? 'inherit' : 'ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
     const errors: Buffer[] = [];
-    if (!interactive) child.stderr?.on('data', (chunk: Buffer) => errors.push(chunk));
+    child.stderr?.on('data', (chunk: Buffer) => errors.push(chunk));
+    if (interactive) {
+      child.stdout?.pipe(process.stdout, { end: false });
+      child.stderr?.pipe(process.stderr, { end: false });
+    }
     child.once('error', reject);
     child.once('close', (code) => {
       if (code === 0) resolve();

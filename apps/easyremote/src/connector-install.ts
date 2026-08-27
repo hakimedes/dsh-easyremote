@@ -8,19 +8,30 @@ function assertProfileName(profile: string) {
   if (!/^[a-zA-Z0-9._-]+$/.test(profile)) throw new Error('Invalid DSH profile name');
 }
 
-export function buildConnectorInstallLaunch(dshExecutable: string, profile: string, packagePath: string): ProcessLaunch {
+export function buildConnectorInstallLaunch(
+  dshExecutable: string,
+  profile: string,
+  packagePath: string,
+  env?: NodeJS.ProcessEnv,
+): ProcessLaunch {
   assertProfileName(profile);
   return {
     command: dshExecutable,
     args: ['plugin', '--profile', profile, 'add', packagePath],
+    ...(env ? { env } : {}),
   };
 }
 
-export function buildDshProfileProbeLaunch(dshExecutable: string, profile: string): ProcessLaunch {
+export function buildDshProfileProbeLaunch(
+  dshExecutable: string,
+  profile: string,
+  env?: NodeJS.ProcessEnv,
+): ProcessLaunch {
   assertProfileName(profile);
   return {
     command: dshExecutable,
     args: ['plugin', '--profile', profile, 'exec', 'node', '-p', 'process.cwd()'],
+    ...(env ? { env } : {}),
   };
 }
 

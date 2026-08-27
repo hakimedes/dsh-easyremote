@@ -10,9 +10,11 @@ import {
 
 describe('Connector installation', () => {
   it('installs the packaged Connector through the selected DSH profile', () => {
-    expect(buildConnectorInstallLaunch('/usr/local/bin/dsh', 'web', '/state/connector.tgz')).toEqual({
+    const env = { PATH: '/state/bin:/usr/bin' };
+    expect(buildConnectorInstallLaunch('/usr/local/bin/dsh', 'web', '/state/connector.tgz', env)).toEqual({
       command: '/usr/local/bin/dsh',
       args: ['plugin', '--profile', 'web', 'add', '/state/connector.tgz'],
+      env,
     });
   });
 
@@ -55,9 +57,11 @@ describe('Connector installation', () => {
   });
 
   it('asks DSH for its real profile directory when the launcher is only a package-manager shim', () => {
-    expect(buildDshProfileProbeLaunch('C:\\Tools\\node\\dsh.cmd', 'web')).toEqual({
+    const env = { Path: 'C:\\State\\bin;C:\\Windows' };
+    expect(buildDshProfileProbeLaunch('C:\\Tools\\node\\dsh.cmd', 'web', env)).toEqual({
       command: 'C:\\Tools\\node\\dsh.cmd',
       args: ['plugin', '--profile', 'web', 'exec', 'node', '-p', 'process.cwd()'],
+      env,
     });
     expect(inferDshHomeFromProfileOutput(
       'C:\\Users\\Example\\AppData\\Local\\DSH Data\\profiles\\web\r\n',

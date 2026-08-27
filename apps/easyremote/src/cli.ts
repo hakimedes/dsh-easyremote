@@ -19,6 +19,11 @@ import { v7 as uuidv7 } from 'uuid';
 
 import { installCommunityApk } from './android.js';
 import { installUserAutostart, removeUserAutostart } from './autostart.js';
+import {
+  materializeBundledPnpmBin,
+  prependExecutableDirectory,
+  resolveBundledPnpmScript,
+} from './bundled-pnpm.js';
 import { formatHelp, formatStatus } from './cli-views.js';
 import { routeCommand, type CommandHandlers } from './command-router.js';
 import {
@@ -459,8 +464,15 @@ async function installPackagedConnector(profile: string) {
     .sort()
     .at(-1);
   if (!packagePath) throw new Error('Unable to build the Connector package');
-  await runProcessLaunch(buildConnectorInstallLaunch(dshExecutable, profile, packagePath), true);
-  const dshHome = await detectDshHome(dshExecutable, profile);
+  const managedBin = materializeBundledPnpmBin({
+    directory: join(paths.root, 'bin'),
+    platform: process.platform,
+    nodeExecutable: process.execPath,
+    pnpmScript: resolveBundledPnpmScript(),
+  });
+  const dshEnvironment = prependExecutableDirectory(process.env, managedBin);
+  await runProcessLaunch(buildConnectorInstallLaunch(dshExecutable, profile, packagePath, dshEnvironment), true);
+  const dshHome = await detectDshHome(dshExecutable, profile, dshEnvironment);
   if (!dshHome) throw new Error('Connector installed, but DSH_HOME could not be detected; set DSH_HOME and rerun setup');
   const patchPath = join(dshHome, 'profiles', profile, 'cordis.patch.yml');
   if (!existsSync(dirname(patchPath))) throw new Error(`DSH profile not found: ${profile}`);
@@ -469,14 +481,14 @@ async function installPackagedConnector(profile: string) {
   if (process.platform !== 'win32') chmodSync(patchPath, 0o600);
 }
 
-async function detectDshHome(dshExecutable: string, profile: string) {
-  if (process.env.DSH_HOME && existsSync(process.env.DSH_HOME)) return process.env.DSH_HOME;
+async function detectDshHome(dshExecutable: string, profile: string, environment = process.env) {
+  if (environment.DSH_HOME && existsSync(environment.DSH_HOME)) return environment.DSH_HOME;
   try {
-    const inferred = inferDshHomeFromLauncher(readFileSync(dshExecutable, 'utf8'));
+    const inferred = inferDshHomeFromLauncher(readFileSync(dshExecutable, 'utf8'), environment);
     if (inferred && existsSync(inferred)) return inferred;
   } catch {}
   try {
-    const output = await captureProcessLaunch(buildDshProfileProbeLaunch(dshExecutable, profile));
+    const output = await captureProcessLaunch(buildDshProfileProbeLaunch(dshExecutable, profile, environment));
     const inferred = inferDshHomeFromProfileOutput(output, profile);
     if (inferred && existsSync(inferred)) return inferred;
   } catch {}
