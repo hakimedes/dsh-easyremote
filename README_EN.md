@@ -28,7 +28,7 @@ DSH EasyRemote lets you securely use DeepSeek Harness running on your own comput
 
 ## Project status
 
-The project is currently in public preview. The public npm package and long-term-signed Community APK `0.2.0` are available now. Launch setup with `npx` or download Android assets from [GitHub Releases](https://github.com/hakimedes/dsh-easyremote/releases). Additional physical-device and cross-platform regression testing will continue.
+The project is currently in public preview. The public npm package `0.2.1` and long-term-signed Community APK `0.2.0` are available now. Launch setup with `npx` or download Android assets from [GitHub Releases](https://github.com/hakimedes/dsh-easyremote/releases). Additional physical-device and cross-platform regression testing will continue.
 
 ## Quick start without a domain
 

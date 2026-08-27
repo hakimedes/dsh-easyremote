@@ -82,7 +82,7 @@ export function buildHubLaunch(
       HUB_ENTRY: `http://127.0.0.1:${port}`,
       JWT_SECRET: jwtSecret,
       NODE_ENV: 'production',
-      DSH_EASYREMOTE_VERSION: '0.2.0',
+      DSH_EASYREMOTE_VERSION: '0.2.1',
     },
   };
 }

@@ -28,7 +28,7 @@
 
 ## 项目状态
 
-当前版本处于公开预览阶段。npm 公共包与带长期签名的 Community APK `0.2.0` 已发布，可直接通过 `npx` 启动，并从 [GitHub Releases](https://github.com/hakimedes/dsh-easyremote/releases) 下载 Android 安装包。后续仍会继续进行更多真机和跨平台回归。
+当前版本处于公开预览阶段。npm 公共包 `0.2.1` 与带长期签名的 Community APK `0.2.0` 已发布，可直接通过 `npx` 启动，并从 [GitHub Releases](https://github.com/hakimedes/dsh-easyremote/releases) 下载 Android 安装包。后续仍会继续进行更多真机和跨平台回归。
 
 ## 最快开始：不需要域名
 

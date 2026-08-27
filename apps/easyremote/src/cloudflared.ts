@@ -5,14 +5,16 @@ export const CLOUDFLARED_VERSION = '2026.7.2';
 export type CloudflaredArtifact = { name: string; sha256: string; archive: 'binary' | 'tgz' };
 
 const artifacts: Record<string, CloudflaredArtifact> = {
+  // Cloudflare's release-body checksums for Darwin archives can differ from
+  // the uploaded files. Pin the GitHub Release Asset API digests instead.
   'darwin-arm64': {
     name: 'cloudflared-darwin-arm64.tgz',
-    sha256: '0588df58494a6cadd38b9deb6078908a5054063c80784d92fdb8d4a5f3de1c67',
+    sha256: '2086e51c61d6565781d84117a5007d0c826d03ffdc74acb91c08c167f9f8cd7c',
     archive: 'tgz',
   },
   'darwin-x64': {
     name: 'cloudflared-darwin-amd64.tgz',
-    sha256: 'a5afb0ba3da859da47bebc9a918d5b196bf7e4aec23589419b46356731bcc75f',
+    sha256: '4ee0d3b48a990a2f9b5faec5838f73ec1f400aa8e0a4864be576adfafec406cb',
     archive: 'tgz',
   },
   'linux-arm64': {

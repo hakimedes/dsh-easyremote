@@ -11,8 +11,14 @@ import {
 describe('cloudflared runtime', () => {
   it('selects a pinned official artifact for every supported platform', () => {
     expect(CLOUDFLARED_VERSION).toBe('2026.7.2');
-    expect(artifactFor('darwin', 'arm64')).toMatchObject({ archive: 'tgz' });
-    expect(artifactFor('darwin', 'x64').name).toContain('darwin-amd64');
+    expect(artifactFor('darwin', 'arm64')).toMatchObject({
+      archive: 'tgz',
+      sha256: '2086e51c61d6565781d84117a5007d0c826d03ffdc74acb91c08c167f9f8cd7c',
+    });
+    expect(artifactFor('darwin', 'x64')).toMatchObject({
+      name: 'cloudflared-darwin-amd64.tgz',
+      sha256: '4ee0d3b48a990a2f9b5faec5838f73ec1f400aa8e0a4864be576adfafec406cb',
+    });
     expect(artifactFor('linux', 'arm64').name).toContain('linux-arm64');
     expect(artifactFor('linux', 'x64').name).toContain('linux-amd64');
     expect(artifactFor('win32', 'x64').name).toContain('windows-amd64.exe');
