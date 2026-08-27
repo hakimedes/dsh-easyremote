@@ -10,6 +10,26 @@ permissions:
   id-token: write
 
 jobs:
+  mobile-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      previous_tag: ${{ steps.plan.outputs.previous_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Decide whether Mobile needs a new build
+        id: plan
+        run: |
+          previous_tag=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
+          build=true
+          if [ -n "$previous_tag" ] && git diff --quiet "$previous_tag" HEAD -- apps/mobile; then
+            build=false
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+
   npm-package:
     runs-on: ubuntu-latest
     steps:
@@ -65,29 +85,40 @@ jobs:
           npm publish "./$tarball" --access public
 
   android:
+    needs: mobile-changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        if: needs.mobile-changes.outputs.build == 'true'
       - uses: pnpm/action-setup@v4
+        if: needs.mobile-changes.outputs.build == 'true'
         with:
           version: 9.12.0
       - uses: actions/setup-node@v4
+        if: needs.mobile-changes.outputs.build == 'true'
         with:
           node-version: 22.22.0
           cache: pnpm
       - uses: actions/setup-java@v4
+        if: needs.mobile-changes.outputs.build == 'true'
         with:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
-      - run: pnpm install --frozen-lockfile
+        if: needs.mobile-changes.outputs.build == 'true'
+      - if: needs.mobile-changes.outputs.build == 'true'
+        run: pnpm install --frozen-lockfile
       - name: Prepare Community signing key
+        if: needs.mobile-changes.outputs.build == 'true'
         env:
           DSH_KEYSTORE_BASE64: ${{ secrets.DSH_COMMUNITY_KEYSTORE_BASE64 }}
         run: |
           test -n "$DSH_KEYSTORE_BASE64"
           printf '%s' "$DSH_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/community.keystore"
       - name: Build Community APK
+        if: needs.mobile-changes.outputs.build == 'true'
         run: pnpm -C apps/mobile android:community:release
         env:
           ORG_GRADLE_PROJECT_DSH_RELEASE_STORE_FILE: ${{ runner.temp }}/community.keystore
@@ -95,11 +126,19 @@ jobs:
           ORG_GRADLE_PROJECT_DSH_RELEASE_KEY_ALIAS: ${{ secrets.DSH_COMMUNITY_KEY_ALIAS }}
           ORG_GRADLE_PROJECT_DSH_RELEASE_KEY_PASSWORD: ${{ secrets.DSH_COMMUNITY_KEY_PASSWORD }}
       - name: Stage APK
+        if: needs.mobile-changes.outputs.build == 'true'
         run: |
           mkdir -p release
           apk=$(find apps/mobile/android/app/build/outputs/apk/community/release -name '*.apk' -print -quit)
           test -n "$apk"
           cp "$apk" release/DSH-EasyRemote-Community.apk
+      - name: Reuse previous signed Community APK
+        if: needs.mobile-changes.outputs.build != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release
+          gh release download "${{ needs.mobile-changes.outputs.previous_tag }}" --pattern DSH-EasyRemote-Community.apk --dir release
       - uses: actions/upload-artifact@v4
         with:
           name: community-apk

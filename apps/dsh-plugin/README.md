@@ -30,7 +30,7 @@ only needs outbound HTTPS/WSS access to Hub.
 Install the packaged `.tgz` from this repository:
 
 ```bash
-dsh plugin --profile web add /absolute/path/to/hakimedes-dsh-easyremote-connector-0.2.0.tgz
+dsh plugin --profile web add /absolute/path/to/hakimedes-dsh-easyremote-connector-0.2.1.tgz
 ```
 
 Then add this entry to `$DSH_HOME/profiles/web/cordis.patch.yml`:

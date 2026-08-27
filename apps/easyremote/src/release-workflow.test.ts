@@ -13,6 +13,19 @@ import { execFileSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
 describe('GitHub Release workflow', () => {
+  it('reuses the previous signed APK when Mobile did not change', () => {
+    const workflow = readFileSync(
+      new URL('../../../.github/workflows/release.yml', import.meta.url),
+      'utf8',
+    );
+
+    expect(workflow).toContain('mobile-changes:');
+    expect(workflow).toContain("git diff --quiet \"$previous_tag\" HEAD -- apps/mobile");
+    expect(workflow).toContain("if: needs.mobile-changes.outputs.build == 'true'");
+    expect(workflow).toContain('Reuse previous signed Community APK');
+    expect(workflow).toContain('gh release download');
+  });
+
   it('downloads only the public npm package and Community APK artifacts', () => {
     const workflow = readFileSync(
       new URL('../../../.github/workflows/release.yml', import.meta.url),

@@ -23,7 +23,7 @@ export const name = 'dsh-easyremote-connector';
 export const inject = ['webServer', 'agents', 'sessionQuery', 'agentDefaultModel', 'approval', 'apiProxy'];
 
 const PROTOCOL_VERSION = 1;
-const PLUGIN_VERSION = '0.2.0';
+const PLUGIN_VERSION = '0.2.1';
 const HEARTBEAT_MS = 15_000;
 const APPROVAL_TTL_MS = 10 * 60_000;
 const PAIR_POLL_MS = 800;

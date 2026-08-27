@@ -72,15 +72,12 @@ export function renderWizardHtml(options: {
   controlMode?: boolean;
 }) {
   const csrf = JSON.stringify(options.csrfToken).replaceAll('<', '\\u003c');
-  const routeCards = options.controlMode ? `
-    <section class="modes" style="grid-template-columns:1fr">
-      <article class="mode"><div class="num">LOCAL / ONLINE</div><h2>本机控制台</h2><p>当前 Hub 与 Tunnel 状态会显示在下方。运行 setup 可重新进入配置或从快速模式升级到固定域名。</p></article>
-    </section>` : `
+  const routeCards = `
     <section class="modes">
       <article class="mode"><div class="num">STEP 02 / CONNECT · QUICK</div><h2>快速启动</h2><p>无需账号与域名。本机 Hub 通过一次性 Cloudflare 临时隧道上线。</p><button class="button primary" data-action="quick">生成临时连接</button></article>
       <article class="mode"><div class="num">STEP 02 / CONNECT · NAMED</div><h2>深度配置</h2><p>填写固定域名，完成 Cloudflare 授权后自动创建 Named Tunnel 与 DNS。</p><button class="button" data-action="deep">配置固定域名</button></article>
     </section>`;
-  const deepPanel = options.controlMode ? '' : `
+  const deepPanel = `
     <section class="deep" id="deep" hidden>
       <div class="steps"><div class="step active">01 · 域名</div><div class="step">02 · Nameserver</div><div class="step">03 · 授权</div><div class="step">04 · 完成</div></div>
       <div class="fields">

@@ -246,7 +246,7 @@ window.__ModuleLoader__.load({ id: '@hakimedes/dsh-easyremote-connector', factor
   }
 
   module.exports = {
-    inject: [],
+    inject: ['slots'],
     apply: function apply(ctx) {
       ensureStyles();
       var slots = ctx.get('slots');

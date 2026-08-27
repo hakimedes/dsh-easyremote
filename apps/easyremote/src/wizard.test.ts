@@ -57,11 +57,12 @@ describe('localhost setup wizard', () => {
     expect(html).not.toContain('dsh_easyremote_session');
   });
 
-  it('renders a read-only control surface without setup actions after configuration', () => {
+  it('keeps both setup paths available after configuration so a failed Connector install can be retried', () => {
     const html = renderWizardHtml({ csrfToken: 'csrf', version: '0.2.0', controlMode: true });
     expect(html).toContain('本机控制台');
-    expect(html).not.toContain('data-action="quick"');
-    expect(html).not.toContain('data-action="provision"');
+    expect(html).toContain('data-action="quick"');
+    expect(html).toContain('data-action="deep"');
+    expect(html).toContain('data-action="provision"');
   });
 
   it('rejects replayed or concurrent action request IDs', async () => {

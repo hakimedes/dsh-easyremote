@@ -40,9 +40,9 @@ import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setu
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
 import { startWizardServer, type WizardAction } from './wizard.js';
 
-const VERSION = '0.2.4';
+const VERSION = '0.2.5';
 const PACKAGE_NAME = '@hakimedes/dsh-easyremote';
-const CONNECTOR_VERSION = '0.2.0';
+const CONNECTOR_VERSION = '0.2.1';
 const COMMUNITY_APK_NAME = 'DSH-EasyRemote-Community.apk';
 const RELEASE_BASE = 'https://github.com/hakimedes/dsh-easyremote/releases/latest/download';
 const CLI_SCRIPT = fileURLToPath(import.meta.url);
@@ -96,8 +96,8 @@ async function main() {
   });
 }
 
-async function setupCommand() {
-  const actions: Record<string, WizardAction> = {
+function createSetupActions(): Record<string, WizardAction> {
+  return {
     quick: async () => {
       persistProgress({ schemaVersion: 1, mode: 'quick', phase: 'quick-starting', updatedAt: Date.now() });
       const result = await controller.startQuick();
@@ -190,6 +190,9 @@ async function setupCommand() {
     },
     'apk/install-adb': installApkWizardAction,
   };
+}
+
+async function setupCommand() {
   const wizard = await startWizardServer({
     version: VERSION,
     getState: async () => ({
@@ -198,7 +201,7 @@ async function setupCommand() {
       message: '本机控制面已就绪。请选择连接路径。',
     }),
     getPairing: () => loadPairingState(paths.pairingState),
-    actions,
+    actions: createSetupActions(),
   });
   console.log(`DSH EasyRemote setup: ${wizard.launchUrl}`);
   openBrowser(wizard.launchUrl);
@@ -363,7 +366,7 @@ async function openControlConsole(message?: string) {
       message: message ?? formatStatus(loadInstallState(paths.installState), true),
     }),
     getPairing: () => loadPairingState(paths.pairingState),
-    actions: { 'apk/install-adb': installApkWizardAction },
+    actions: createSetupActions(),
   });
   console.log(`DSH EasyRemote console: ${control.launchUrl}`);
   openBrowser(control.launchUrl);
