@@ -37,6 +37,33 @@ jobs:
           name: npm-package
           path: dist/*.tgz
 
+  npm-publish:
+    needs: npm-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Install OIDC-compatible npm
+        run: npm install --global npm@11.5.1
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: release
+
+      - name: Publish npm package
+        run: |
+          tarball=$(find release -maxdepth 1 -name 'hakimedes-dsh-easyremote-*.tgz' -print -quit)
+          test -n "$tarball"
+          npm publish "$tarball" --access public
+
   android:
     runs-on: ubuntu-latest
     steps:
