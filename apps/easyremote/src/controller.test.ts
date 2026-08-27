@@ -74,6 +74,33 @@ describe('EasyRemote controller', () => {
     expect(second.recoveryRequired).toBe(true);
   });
 
+  it('returns the live Quick connection when Quick Start is clicked again', async () => {
+    const paths = createRuntimePaths(mkdtempSync(join(tmpdir(), 'easyremote-controller-')));
+    const spawnProcess = vi.fn()
+      .mockReturnValueOnce(child())
+      .mockReturnValueOnce(child());
+    const controller = new EasyRemoteController(paths, {
+      ensureCloudflared: async () => {},
+      findPort: async () => 8787,
+      spawnProcess,
+      waitForHub: async () => ({ hubId: 'stable-hub-id', publicOrigin: 'http://127.0.0.1:8787' }),
+      waitForQuick: async () => 'https://black-whale.trycloudflare.com',
+      hubScript: '/runtime/hub/index.js',
+      createInstallId: () => 'stable-install-id',
+      nodeName: () => 'Windows PC',
+    });
+
+    const first = await controller.startQuick();
+    const second = await controller.startQuick();
+
+    expect(second).toEqual({
+      state: first.state,
+      recoveryRequired: false,
+      alreadyRunning: true,
+    });
+    expect(spawnProcess).toHaveBeenCalledTimes(2);
+  });
+
   it('restarts a configured Named Tunnel against the same local Hub', async () => {
     const paths = createRuntimePaths(mkdtempSync(join(tmpdir(), 'easyremote-controller-')));
     saveInstallState(paths.installState, {

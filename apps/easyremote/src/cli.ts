@@ -34,7 +34,7 @@ import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setu
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
 import { startWizardServer, type WizardAction } from './wizard.js';
 
-const VERSION = '0.2.1';
+const VERSION = '0.2.2';
 const PACKAGE_NAME = '@hakimedes/dsh-easyremote';
 const CONNECTOR_VERSION = '0.2.0';
 const COMMUNITY_APK_NAME = 'DSH-EasyRemote-Community.apk';
@@ -97,11 +97,11 @@ async function setupCommand() {
       const result = await controller.startQuick();
       const connector = await installConnectorSafely('web');
       persistProgress({ schemaVersion: 1, mode: 'quick', phase: 'complete', updatedAt: Date.now() });
-      monitorController();
+      if (!result.alreadyRunning) monitorController();
       return {
         ok: true,
         message: [
-          `临时连接已建立：${result.state.tunnel.publicOrigin}`,
+          `${result.alreadyRunning ? '临时连接已在运行' : '临时连接已建立'}：${result.state.tunnel.publicOrigin}`,
           result.recoveryRequired ? '公网地址已变化，请在 DSH Web 配对页扫描一次恢复二维码。' : '请打开 DSH Web 的 /__dsh_remote_v1/pair 扫码。',
           connector,
         ].join('\n'),

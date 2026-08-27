@@ -111,4 +111,24 @@ describe('localhost setup wizard', () => {
       await server.close();
     }
   });
+
+  it('answers the browser favicon request without a console-visible 404', async () => {
+    const server = await startWizardServer({
+      version: '0.2.0',
+      getState: async () => ({ message: 'ready' }),
+      actions: {},
+    });
+    try {
+      const exchange = await fetch(server.launchUrl, { redirect: 'manual' });
+      const cookie = exchange.headers.get('set-cookie')!.split(';')[0];
+      const response = await fetch(`${server.origin}/favicon.ico`, {
+        headers: { cookie },
+      });
+
+      expect(response.status).toBe(204);
+      expect(await response.text()).toBe('');
+    } finally {
+      await server.close();
+    }
+  });
 });

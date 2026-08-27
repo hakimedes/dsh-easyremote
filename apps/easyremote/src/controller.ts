@@ -41,6 +41,7 @@ type ControllerDependencies = {
 export type StartResult = {
   state: InstallState;
   recoveryRequired: boolean;
+  alreadyRunning: boolean;
 };
 
 export class EasyRemoteController {
@@ -53,8 +54,15 @@ export class EasyRemoteController {
   ) {}
 
   async startQuick(): Promise<StartResult> {
-    if (this.hubProcess || this.tunnelProcess) throw new Error('EasyRemote is already running in this process');
     const previous = loadInstallState(this.paths.installState);
+    if (this.hubProcess || this.tunnelProcess) {
+      const hubRunning = this.hubProcess?.exitCode == null && this.hubProcess?.signalCode == null;
+      const tunnelRunning = this.tunnelProcess?.exitCode == null && this.tunnelProcess?.signalCode == null;
+      if (hubRunning && tunnelRunning && previous?.activeMode === 'quick') {
+        return { state: previous, recoveryRequired: false, alreadyRunning: true };
+      }
+      throw new Error('EasyRemote is already running in this process');
+    }
     const port = await this.dependencies.findPort(previous?.hub.port);
     await this.dependencies.ensureCloudflared();
     const jwtSecret = this.loadOrCreateJwtSecret();
@@ -95,6 +103,7 @@ export class EasyRemoteController {
       return {
         state,
         recoveryRequired: Boolean(previous?.tunnel.publicOrigin && previous.tunnel.publicOrigin !== publicOrigin),
+        alreadyRunning: false,
       };
     } catch (error) {
       await this.stop();
@@ -133,7 +142,7 @@ export class EasyRemoteController {
         hub: { ...previous.hub, hubId: previous.hub.hubId || localMeta.hubId, port },
       };
       saveInstallState(this.paths.installState, state);
-      return { state, recoveryRequired: false };
+      return { state, recoveryRequired: false, alreadyRunning: false };
     } catch (error) {
       await this.stop();
       throw error;
@@ -201,6 +210,7 @@ export class EasyRemoteController {
       return {
         state,
         recoveryRequired: Boolean(previous?.tunnel.publicOrigin && previous.tunnel.publicOrigin !== publicOrigin),
+        alreadyRunning: false,
       };
     } catch (error) {
       await this.stop();

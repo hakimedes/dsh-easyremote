@@ -107,6 +107,7 @@ export function renderWizardHtml(options: {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
+  <link rel="icon" href="/favicon.ico">
   <title>DSH EasyRemote · ${options.controlMode ? '本机控制台' : '本机引导'}</title>
   <style>
     :root{--ink:#050708;--panel:#0b0f12;--line:rgba(135,170,188,.18);--text:#edf7fb;--muted:#82949d;--cyan:#54d6ff;--blue:#4a78ff;--ok:#72e5bc;--danger:#ff7d79}
@@ -144,7 +145,7 @@ export function renderWizardHtml(options: {
     function renderPairing(data){pairData=data;const qr=document.getElementById('pairQr');const status=document.getElementById('pairStatus');const hint=document.getElementById('pairHint');const detail=document.getElementById('pairDetail');pairing.classList.toggle('ready',Boolean(data.ready));qr.className='pairqr '+(data.ready?'ready':'waiting');status.textContent=String(data.status||'waiting').toUpperCase();if(data.ready){qr.innerHTML=data.qrSvg;hint.textContent=data.recovering?'扫描此二维码，将手机安全重连到当前 Hub。':'打开 Community APK，扫描此二维码完成首次连接。';detail.textContent=(data.nodeName||'DSH')+' · '+(data.hub||'');}else{qr.innerHTML='<div class="pairpulse"><span></span><span></span><span></span></div>';hint.textContent=data.nodeId?'电脑已经连接。需要重连手机时，请在 DSH Web 设置页刷新二维码。':'完成连接配置后，这里会自动显示一次性互联二维码。';detail.textContent=data.error?('Connector：'+data.error):'如果 Connector 是首次安装，请重启一次 DSH Web；本页会自动继续检测。';}renderCountdown();}
     function renderCountdown(){const node=document.getElementById('pairCountdown');if(!pairData?.ready||!pairData.pairingExpiresAt){node.textContent='';return}const remaining=Math.max(0,pairData.pairingExpiresAt-Date.now());node.textContent='EXPIRES '+Math.floor(remaining/60000)+':'+String(Math.floor((remaining%60000)/1000)).padStart(2,'0');}
     async function loadPairing(){try{const response=await fetch('/api/pairing',{credentials:'same-origin',cache:'no-store'});if(response.ok)renderPairing(await response.json());}catch{}}
-    async function call(action,body={}){const requestId=crypto.randomUUID();document.querySelectorAll('button').forEach(b=>b.disabled=true);out.textContent='执行 '+action+'…';try{const response=await fetch('/api/'+action,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-dsh-csrf':csrf,'x-dsh-request-id':requestId},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw new Error(data.error||('HTTP '+response.status));out.textContent=data.message||JSON.stringify(data,null,2);if(action==='quick'||action==='named/provision'){pairing.scrollIntoView({behavior:'smooth'});void loadPairing();}return data}catch(error){out.textContent='失败：'+error.message;throw error}finally{document.querySelectorAll('button').forEach(b=>b.disabled=false)}}
+    async function call(action,body={}){const requestId=crypto.randomUUID();document.querySelectorAll('button').forEach(b=>b.disabled=true);out.textContent='执行 '+action+'…';try{const response=await fetch('/api/'+action,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-dsh-csrf':csrf,'x-dsh-request-id':requestId},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw new Error(data.error||('HTTP '+response.status));out.textContent=data.message||JSON.stringify(data,null,2);if(action==='quick'||action==='named/provision'){pairing.scrollIntoView({behavior:'smooth'});void loadPairing();}return data}catch(error){out.textContent='失败：'+error.message;return null}finally{document.querySelectorAll('button').forEach(b=>b.disabled=false)}}
     document.addEventListener('click',event=>{const button=event.target.closest('[data-action]');if(!button)return;const action=button.dataset.action;if(action==='deep'){deep.hidden=false;deep.scrollIntoView({behavior:'smooth'});return}if(action==='quick')void call('quick');else if(action==='save-domain')void call('named/domain',values());else if(action==='check-ns')void call('named/check-ns',values());else if(action==='authorize')void call('named/authorize',values());else if(action==='provision')void call('named/provision',values());else if(action==='install-adb')void call('apk/install-adb');});
     fetch('/api/state',{credentials:'same-origin'}).then(r=>r.json()).then(data=>{if(deep&&data.progress?.mode==='named'){deep.hidden=false;for(const id of ['rootDomain','hostname'])if(data.progress[id])document.getElementById(id).value=data.progress[id];(data.progress.nameservers||[]).forEach((v,i)=>{const n=document.getElementById('ns'+(i+1));if(n)n.value=v});}if(data.message)out.textContent=data.message}).catch(()=>{});
     loadPairing();setInterval(loadPairing,2000);setInterval(renderCountdown,1000);
@@ -202,6 +203,14 @@ export async function startWizardServer(options: {
       });
       if (!authorization.ok) return sendJson(response, authorization.status, { error: authorization.message });
 
+      if (['GET', 'HEAD'].includes(request.method || '') && url.pathname === '/favicon.ico') {
+        response.writeHead(204, {
+          'cache-control': 'public, max-age=86400',
+          'x-content-type-options': 'nosniff',
+        });
+        response.end();
+        return;
+      }
       if (request.method === 'GET' && url.pathname === '/') {
         response.writeHead(200, {
           'content-type': 'text/html; charset=utf-8',
