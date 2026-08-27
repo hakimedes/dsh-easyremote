@@ -10,14 +10,14 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "uuid": "^11.1.0",
+    "uuid": "^14.0.2",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/node": "^22.13.0",
+    "@types/node": "^26.2.0",
     "@types/ws": "^8.18.1",
     "tsx": "^4.20.3",
-    "typescript": "^5.6.3",
-    "vitest": "^3.0.0"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
   }
 }
