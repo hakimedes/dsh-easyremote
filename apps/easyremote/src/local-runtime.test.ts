@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  captureProcessLaunch,
   ensureCloudflaredRuntime,
   findAvailablePort,
   spawnLoggedProcess,
@@ -46,5 +47,12 @@ describe('default local runtime adapters', () => {
       child.once('close', () => resolve());
     });
     expect(readFileSync(join(paths.logsDir, 'hub.log'), 'utf8')).toContain('deep ocean ready');
+  });
+
+  it('returns stdout from a successful non-interactive command', async () => {
+    await expect(captureProcessLaunch({
+      command: process.execPath,
+      args: ['-e', "process.stdout.write('profile-directory')"],
+    })).resolves.toBe('profile-directory');
   });
 });

@@ -1,7 +1,53 @@
+import { existsSync } from 'node:fs';
 import WebSocket from 'ws';
+
+import { loadPairingState } from './pairing-state.js';
 
 export type DoctorCheck = { ok: boolean; detail: string };
 export type DoctorResult = DoctorCheck & { name: string };
+
+export function inspectConnectorRuntime(options: {
+  pairingStatePath: string;
+  expectedHub?: string;
+}): DoctorCheck {
+  if (!existsSync(options.pairingStatePath)) {
+    return {
+      ok: false,
+      detail: 'pairing handoff missing; restart DSH Web after Connector installation',
+    };
+  }
+
+  const state = loadPairingState(options.pairingStatePath);
+  if (!state) return { ok: false, detail: 'pairing handoff is invalid' };
+
+  if (options.expectedHub) {
+    let expectedHub: string;
+    try {
+      expectedHub = new URL(options.expectedHub).origin;
+    } catch {
+      return { ok: false, detail: `configured public origin is invalid: ${options.expectedHub}` };
+    }
+    if (state.hub !== expectedHub) {
+      return {
+        ok: false,
+        detail: `Connector is using ${state.hub}; expected ${expectedHub}`,
+      };
+    }
+  }
+
+  if (state.error) return { ok: false, detail: state.error };
+  if (state.nodeId) {
+    return {
+      ok: true,
+      detail: 'connected; generate a recovery QR in DSH Web Settings -> Remote',
+    };
+  }
+  if (state.qrPayload) return { ok: true, detail: 'pairing QR ready' };
+  return {
+    ok: false,
+    detail: `Connector loaded but no active pairing QR (status: ${state.status})`,
+  };
+}
 
 export async function runDoctor(options: {
   nodeVersion?: string;

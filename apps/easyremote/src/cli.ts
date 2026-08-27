@@ -21,12 +21,18 @@ import { installCommunityApk } from './android.js';
 import { installUserAutostart, removeUserAutostart } from './autostart.js';
 import { formatHelp, formatStatus } from './cli-views.js';
 import { routeCommand, type CommandHandlers } from './command-router.js';
-import { buildConnectorInstallLaunch, inferDshHomeFromLauncher, updateCordisPatch } from './connector-install.js';
+import {
+  buildConnectorInstallLaunch,
+  buildDshProfileProbeLaunch,
+  inferDshHomeFromLauncher,
+  inferDshHomeFromProfileOutput,
+  updateCordisPatch,
+} from './connector-install.js';
 import { EasyRemoteController } from './controller.js';
-import { probeWebSocket, runDoctor } from './doctor.js';
+import { inspectConnectorRuntime, probeWebSocket, runDoctor } from './doctor.js';
 import { normalizeHostname, normalizeNameserver, verifyNameservers } from './domain.js';
 import { loadInstallState } from './install-state.js';
-import { ensureCloudflaredRuntime, findAvailablePort, inspectCloudflaredRuntime, runProcessLaunch, spawnLoggedProcess } from './local-runtime.js';
+import { captureProcessLaunch, ensureCloudflaredRuntime, findAvailablePort, inspectCloudflaredRuntime, runProcessLaunch, spawnLoggedProcess } from './local-runtime.js';
 import { buildLoginLaunch, provisionNamedTunnel } from './named-tunnel.js';
 import { loadPairingState } from './pairing-state.js';
 import { createRuntimePaths } from './runtime.js';
@@ -34,7 +40,7 @@ import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setu
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
 import { startWizardServer, type WizardAction } from './wizard.js';
 
-const VERSION = '0.2.2';
+const VERSION = '0.2.3';
 const PACKAGE_NAME = '@hakimedes/dsh-easyremote';
 const CONNECTOR_VERSION = '0.2.0';
 const COMMUNITY_APK_NAME = 'DSH-EasyRemote-Community.apk';
@@ -267,7 +273,11 @@ async function doctorCommand(args: string[]) {
       websocket: async () => state?.tunnel.publicOrigin
         ? probeWebSocket(state.tunnel.publicOrigin)
         : ({ ok: false, detail: 'not configured' }),
-      connector: async () => ({ ok: existsSync(paths.connectorConfig), detail: paths.connectorConfig }),
+      connectorConfig: async () => ({ ok: existsSync(paths.connectorConfig), detail: paths.connectorConfig }),
+      connectorRuntime: async () => inspectConnectorRuntime({
+        pairingStatePath: paths.pairingState,
+        expectedHub: state?.tunnel.publicOrigin,
+      }),
       nameservers: async () => {
         if (state?.activeMode !== 'named') return { ok: true, detail: 'not required in quick mode' };
         if (!progress?.rootDomain || !progress.nameservers) return { ok: false, detail: 'setup checkpoint is missing NS values' };
@@ -447,7 +457,7 @@ async function installPackagedConnector(profile: string) {
     .at(-1);
   if (!packagePath) throw new Error('Unable to build the Connector package');
   await runProcessLaunch(buildConnectorInstallLaunch(dshExecutable, profile, packagePath), true);
-  const dshHome = detectDshHome(dshExecutable);
+  const dshHome = await detectDshHome(dshExecutable, profile);
   if (!dshHome) throw new Error('Connector installed, but DSH_HOME could not be detected; set DSH_HOME and rerun setup');
   const patchPath = join(dshHome, 'profiles', profile, 'cordis.patch.yml');
   if (!existsSync(dirname(patchPath))) throw new Error(`DSH profile not found: ${profile}`);
@@ -456,10 +466,15 @@ async function installPackagedConnector(profile: string) {
   if (process.platform !== 'win32') chmodSync(patchPath, 0o600);
 }
 
-function detectDshHome(dshExecutable: string) {
+async function detectDshHome(dshExecutable: string, profile: string) {
   if (process.env.DSH_HOME && existsSync(process.env.DSH_HOME)) return process.env.DSH_HOME;
   try {
     const inferred = inferDshHomeFromLauncher(readFileSync(dshExecutable, 'utf8'));
+    if (inferred && existsSync(inferred)) return inferred;
+  } catch {}
+  try {
+    const output = await captureProcessLaunch(buildDshProfileProbeLaunch(dshExecutable, profile));
+    const inferred = inferDshHomeFromProfileOutput(output, profile);
     if (inferred && existsSync(inferred)) return inferred;
   } catch {}
   const fallback = join(homedir(), '.dsh');

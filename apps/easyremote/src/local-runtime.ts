@@ -1,12 +1,15 @@
 import { createServer } from 'node:net';
 import { createHash } from 'node:crypto';
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { artifactFor, CLOUDFLARED_VERSION, type CloudflaredArtifact } from './cloudflared.js';
 import { installCloudflaredArtifact } from './download.js';
 import type { ProcessLaunch, RuntimePaths } from './runtime.js';
+
+const crossSpawn = createRequire(import.meta.url)('cross-spawn') as typeof spawn;
 
 export async function findAvailablePort(
   preferred = 8787,
@@ -90,7 +93,7 @@ export function spawnLoggedProcess(
 ): ChildProcess {
   mkdirSync(paths.logsDir, { recursive: true, mode: 0o700 });
   const log = createWriteStream(join(paths.logsDir, `${role}.log`), { flags: 'a', mode: 0o600 });
-  const child = spawn(launch.command, launch.args, {
+  const child = crossSpawn(launch.command, launch.args, {
     env: launch.env ?? process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
@@ -107,7 +110,7 @@ export function spawnLoggedProcess(
 
 export function runProcessLaunch(launch: ProcessLaunch, interactive = false): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(launch.command, launch.args, {
+    const child = crossSpawn(launch.command, launch.args, {
       env: launch.env ?? process.env,
       stdio: interactive ? 'inherit' : ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
@@ -117,6 +120,35 @@ export function runProcessLaunch(launch: ProcessLaunch, interactive = false): Pr
     child.once('error', reject);
     child.once('close', (code) => {
       if (code === 0) resolve();
+      else reject(new Error(`Command failed (${code ?? 'signal'}): ${Buffer.concat(errors).toString('utf8').trim()}`));
+    });
+  });
+}
+
+export function captureProcessLaunch(launch: ProcessLaunch, maxOutputBytes = 1024 * 1024): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = crossSpawn(launch.command, launch.args, {
+      env: launch.env ?? process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    const output: Buffer[] = [];
+    const errors: Buffer[] = [];
+    let outputBytes = 0;
+    const capture = (target: Buffer[], chunk: Buffer) => {
+      outputBytes += chunk.length;
+      if (outputBytes > maxOutputBytes) {
+        child.kill();
+        reject(new Error('Command output exceeded the safe capture limit'));
+        return;
+      }
+      target.push(chunk);
+    };
+    child.stdout?.on('data', (chunk: Buffer) => capture(output, chunk));
+    child.stderr?.on('data', (chunk: Buffer) => capture(errors, chunk));
+    child.once('error', reject);
+    child.once('close', (code) => {
+      if (code === 0) resolve(Buffer.concat(output).toString('utf8'));
       else reject(new Error(`Command failed (${code ?? 'signal'}): ${Buffer.concat(errors).toString('utf8').trim()}`));
     });
   });

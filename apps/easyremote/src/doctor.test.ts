@@ -1,7 +1,10 @@
 import { EventEmitter } from 'node:events';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { probeWebSocket, runDoctor } from './doctor.js';
+import { inspectConnectorRuntime, probeWebSocket, runDoctor } from './doctor.js';
 
 describe('doctor', () => {
   it('reports actionable checks without throwing on a failed probe', async () => {
@@ -46,5 +49,16 @@ describe('doctor', () => {
       },
     });
     await expect(failure).resolves.toEqual({ ok: false, detail: 'upgrade blocked' });
+  });
+
+  it('reports a configured but unloaded Connector instead of a false green check', () => {
+    const root = mkdtempSync(join(tmpdir(), 'easyremote-doctor-'));
+    expect(inspectConnectorRuntime({
+      pairingStatePath: join(root, 'pairing.json'),
+      expectedHub: 'https://black-whale.trycloudflare.com',
+    })).toEqual({
+      ok: false,
+      detail: 'pairing handoff missing; restart DSH Web after Connector installation',
+    });
   });
 });
