@@ -40,7 +40,7 @@ import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setu
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
 import { startWizardServer, type WizardAction } from './wizard.js';
 
-const VERSION = '0.2.3';
+const VERSION = '0.2.4';
 const PACKAGE_NAME = '@hakimedes/dsh-easyremote';
 const CONNECTOR_VERSION = '0.2.0';
 const COMMUNITY_APK_NAME = 'DSH-EasyRemote-Community.apk';

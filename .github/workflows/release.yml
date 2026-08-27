@@ -62,7 +62,7 @@ jobs:
         run: |
           tarball=$(find release -maxdepth 1 -name 'hakimedes-dsh-easyremote-*.tgz' -print -quit)
           test -n "$tarball"
-          npm publish "$tarball" --access public
+          npm publish "./$tarball" --access public
 
   android:
     runs-on: ubuntu-latest
