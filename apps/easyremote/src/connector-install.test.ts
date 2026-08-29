@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   buildConnectorInstallLaunch,
   buildDshProfileProbeLaunch,
+  cleanupLegacyConnectorPatches,
   inferDshHomeFromLauncher,
   inferDshHomeFromProfileOutput,
-  updateCordisPatch,
 } from './connector-install.js';
 
 describe('Connector installation', () => {
@@ -18,18 +18,61 @@ describe('Connector installation', () => {
     });
   });
 
-  it('upgrades the old package name without duplicating the loader entry', () => {
-    const existing = `# user config\n- insert:\n    - id: dsh-remote-hub-connector\n      name: '@dsh-remote/hub-connector'\n`;
-    const updated = updateCordisPatch(existing);
-    expect(updated).toContain("name: '@hakimedes/dsh-easyremote-connector'");
-    expect(updated.match(/id: dsh-easyremote-connector/g)).toHaveLength(1);
-    expect(updated).not.toContain("name: '@dsh-remote/hub-connector'");
+  it('leaves the default user overlay empty because DSH activates the Connector bundle', () => {
+    const existing = [
+      '# Your patch layer for this dsh profile, applied after every bundle layer:',
+      '# a top-level YAML array of loader patch entries.',
+      '[]',
+      '',
+    ].join('\n');
+
+    expect(cleanupLegacyConnectorPatches(existing)).toBe(existing);
   });
 
-  it('appends one connector entry while preserving unrelated user config', () => {
-    const updated = updateCordisPatch('# user config\n');
-    expect(updated.startsWith('# user config')).toBe(true);
-    expect(updated.match(/name: '@hakimedes\/dsh-easyremote-connector'/g)).toHaveLength(1);
+  it('repairs the invalid user overlay written by earlier EasyRemote installers', () => {
+    const broken = [
+      '# Your patch layer for this dsh profile, applied after every bundle layer:',
+      '[]',
+      '# DSH EasyRemote Connector (managed by dsh-easyremote)',
+      '- insert:',
+      '    - id: dsh-easyremote-connector',
+      "      name: '@hakimedes/dsh-easyremote-connector'",
+      '',
+    ].join('\n');
+
+    const repaired = cleanupLegacyConnectorPatches(broken);
+    expect(repaired).toBe([
+      '# Your patch layer for this dsh profile, applied after every bundle layer:',
+      '[]',
+      '',
+    ].join('\n'));
+    expect(cleanupLegacyConnectorPatches(repaired)).toBe(repaired);
+  });
+
+  it('removes legacy Connector rows while preserving unrelated user patches', () => {
+    const existing = [
+      '# user config',
+      '- id: user-theme',
+      '  config:',
+      '    appearance: dark',
+      '# DSH Remote Hub connector',
+      '- insert:',
+      '    - id: dsh-remote-hub-connector',
+      "      name: '@dsh-remote/hub-connector'",
+      '# DSH EasyRemote Connector (managed by dsh-easyremote)',
+      '- insert:',
+      '    - id: dsh-easyremote-connector',
+      "      name: '@hakimedes/dsh-easyremote-connector'",
+      '',
+    ].join('\n');
+
+    expect(cleanupLegacyConnectorPatches(existing)).toBe([
+      '# user config',
+      '- id: user-theme',
+      '  config:',
+      '    appearance: dark',
+      '',
+    ].join('\n'));
   });
 
   it('infers DSH_HOME from a launcher without executing its shell contents', () => {

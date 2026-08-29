@@ -40,7 +40,7 @@ describe('GitHub Release workflow', () => {
     );
   });
 
-  it('downloads the previous APK without relying on a checked-out repository', () => {
+  it('falls back to the latest release with an APK when the previous tag has no release', () => {
     const workflow = readFileSync(
       new URL('../../../.github/workflows/release.yml', import.meta.url),
       'utf8',
@@ -53,17 +53,28 @@ describe('GitHub Release workflow', () => {
 
     const script = reuseStep![1]
       .replace(/^ {10}/gm, '')
-      .replaceAll('${{ needs.mobile-changes.outputs.previous_tag }}', 'v0.2.5')
+      .replaceAll('${{ needs.mobile-changes.outputs.previous_tag }}', 'v0.2.6')
       .replaceAll('${{ github.repository }}', 'hakimedes/dsh-easyremote');
     const workspace = mkdtempSync(join(tmpdir(), 'dsh-release-apk-reuse-'));
     const fakeBin = join(workspace, 'bin');
-    const capturedArgs = join(workspace, 'gh-args.txt');
+    const capturedCalls = join(workspace, 'gh-calls.txt');
 
     try {
       mkdirSync(fakeBin);
       writeFileSync(
         join(fakeBin, 'gh'),
-        '#!/bin/sh\nprintf "%s\\n" "$@" > "$CAPTURED_ARGS"\n',
+        [
+          '#!/bin/sh',
+          'printf "%s\\n" "$*" >> "$CAPTURED_CALLS"',
+          'if [ "$1 $2 $3" = "release download v0.2.6" ]; then exit 1; fi',
+          'if [ "$1 $2" = "release list" ]; then printf "v0.2.4\\n"; exit 0; fi',
+          'if [ "$1 $2 $3" = "release download v0.2.4" ]; then',
+          '  touch release/DSH-EasyRemote-Community.apk',
+          '  exit 0',
+          'fi',
+          'exit 2',
+          '',
+        ].join('\n'),
       );
       chmodSync(join(fakeBin, 'gh'), 0o755);
 
@@ -71,22 +82,17 @@ describe('GitHub Release workflow', () => {
         cwd: workspace,
         env: {
           ...process.env,
-          CAPTURED_ARGS: capturedArgs,
+          CAPTURED_CALLS: capturedCalls,
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
         },
       });
 
-      expect(readFileSync(capturedArgs, 'utf8').trim().split('\n')).toEqual([
-        'release',
-        'download',
-        'v0.2.5',
-        '--repo',
-        'hakimedes/dsh-easyremote',
-        '--pattern',
-        'DSH-EasyRemote-Community.apk',
-        '--dir',
-        'release',
+      expect(readFileSync(capturedCalls, 'utf8').trim().split('\n')).toEqual([
+        'release download v0.2.6 --repo hakimedes/dsh-easyremote --pattern DSH-EasyRemote-Community.apk --dir release',
+        'release list --repo hakimedes/dsh-easyremote --limit 50 --json tagName --jq .[].tagName',
+        'release download v0.2.4 --repo hakimedes/dsh-easyremote --pattern DSH-EasyRemote-Community.apk --dir release',
       ]);
+      expect(readFileSync(join(workspace, 'release', 'DSH-EasyRemote-Community.apk'), 'utf8')).toBe('');
     } finally {
       rmSync(workspace, { recursive: true, force: true });
     }

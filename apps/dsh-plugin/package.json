@@ -1,6 +1,6 @@
 {
   "name": "@hakimedes/dsh-easyremote-connector",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Outbound DeepSeek Harness connector for DSH EasyRemote",
   "type": "module",
   "main": "lib/index.js",
@@ -16,6 +16,9 @@
     "dsh.plugin.json"
   ],
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-ui-settings"

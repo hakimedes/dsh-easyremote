@@ -138,10 +138,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p release
-          gh release download "${{ needs.mobile-changes.outputs.previous_tag }}" \
-            --repo "${{ github.repository }}" \
+          repo="${{ github.repository }}"
+          previous_tag="${{ needs.mobile-changes.outputs.previous_tag }}"
+          if gh release download "$previous_tag" \
+            --repo "$repo" \
             --pattern DSH-EasyRemote-Community.apk \
-            --dir release
+            --dir release; then
+            exit 0
+          fi
+          while IFS= read -r release_tag; do
+            [ -n "$release_tag" ] || continue
+            [ "$release_tag" = "$previous_tag" ] && continue
+            if gh release download "$release_tag" \
+              --repo "$repo" \
+              --pattern DSH-EasyRemote-Community.apk \
+              --dir release; then
+              exit 0
+            fi
+          done < <(gh release list --repo "$repo" --limit 50 --json tagName --jq '.[].tagName')
+          echo "No previous GitHub Release contains DSH-EasyRemote-Community.apk" >&2
+          exit 1
       - uses: actions/upload-artifact@v4
         with:
           name: community-apk

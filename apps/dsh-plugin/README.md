@@ -30,16 +30,13 @@ only needs outbound HTTPS/WSS access to Hub.
 Install the packaged `.tgz` from this repository:
 
 ```bash
-dsh plugin --profile web add /absolute/path/to/hakimedes-dsh-easyremote-connector-0.2.1.tgz
+dsh plugin --profile web add /absolute/path/to/hakimedes-dsh-easyremote-connector-0.2.2.tgz
 ```
 
-Then add this entry to `$DSH_HOME/profiles/web/cordis.patch.yml`:
-
-```yaml
-- insert:
-    - id: dsh-easyremote-connector
-      name: '@hakimedes/dsh-easyremote-connector'
-```
+The package declares `dsh.bundle.patch`, so `dsh plugin add` registers the
+bundle in the profile automatically. Do not add the Connector to the user's
+`$DSH_HOME/profiles/web/cordis.patch.yml`; that file remains the user's final
+override layer.
 
 Restart `dsh web`, then open **Settings → Remote** to scan or refresh the
 one-time QR. The standalone fallback is the URL printed by DSH with

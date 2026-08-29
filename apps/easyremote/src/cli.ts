@@ -29,9 +29,9 @@ import { routeCommand, type CommandHandlers } from './command-router.js';
 import {
   buildConnectorInstallLaunch,
   buildDshProfileProbeLaunch,
+  cleanupLegacyConnectorPatches,
   inferDshHomeFromLauncher,
   inferDshHomeFromProfileOutput,
-  updateCordisPatch,
 } from './connector-install.js';
 import { EasyRemoteController } from './controller.js';
 import { inspectConnectorRuntime, probeWebSocket, runDoctor } from './doctor.js';
@@ -45,9 +45,9 @@ import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setu
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
 import { startWizardServer, type WizardAction } from './wizard.js';
 
-const VERSION = '0.2.6';
+const VERSION = '0.2.7';
 const PACKAGE_NAME = '@hakimedes/dsh-easyremote';
-const CONNECTOR_VERSION = '0.2.1';
+const CONNECTOR_VERSION = '0.2.2';
 const COMMUNITY_APK_NAME = 'DSH-EasyRemote-Community.apk';
 const RELEASE_BASE = 'https://github.com/hakimedes/dsh-easyremote/releases/latest/download';
 const CLI_SCRIPT = fileURLToPath(import.meta.url);
@@ -481,8 +481,11 @@ async function installPackagedConnector(profile: string) {
   const patchPath = join(dshHome, 'profiles', profile, 'cordis.patch.yml');
   if (!existsSync(dirname(patchPath))) throw new Error(`DSH profile not found: ${profile}`);
   const existing = existsSync(patchPath) ? readFileSync(patchPath, 'utf8') : '';
-  writeFileSync(patchPath, updateCordisPatch(existing), { mode: 0o600 });
-  if (process.platform !== 'win32') chmodSync(patchPath, 0o600);
+  const cleaned = cleanupLegacyConnectorPatches(existing);
+  if (cleaned !== existing) {
+    writeFileSync(patchPath, cleaned, { mode: 0o600 });
+    if (process.platform !== 'win32') chmodSync(patchPath, 0o600);
+  }
 }
 
 async function detectDshHome(dshExecutable: string, profile: string, environment = process.env) {

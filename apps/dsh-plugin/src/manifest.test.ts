@@ -31,6 +31,13 @@ describe('DSH plugin manifest', () => {
     expect(manifest.name).toBe(pkg.name);
     expect(manifest.entry.name).toBe(pkg.name);
     expect(manifest.entry.inject).toContain('apiProxy');
+    expect(pkg.dsh.bundle).toEqual({ patch: './cordis.patch.yml' });
+    expect(readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8')).toBe([
+      '- insert:',
+      '    - id: dsh-easyremote-connector',
+      "      name: '@hakimedes/dsh-easyremote-connector'",
+      '',
+    ].join('\n'));
   });
 
   it('registers the browser client under the published package id', () => {

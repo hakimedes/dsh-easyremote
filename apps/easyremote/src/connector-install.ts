@@ -1,8 +1,7 @@
 import type { ProcessLaunch } from './runtime.js';
 import { posix, win32 } from 'node:path';
 
-const CONNECTOR_PACKAGE = '@hakimedes/dsh-easyremote-connector';
-const CONNECTOR_BLOCK = `\n# DSH EasyRemote Connector (managed by dsh-easyremote)\n- insert:\n    - id: dsh-easyremote-connector\n      name: '${CONNECTOR_PACKAGE}'\n`;
+const MANAGED_CONNECTOR_PATCH = /^(?:# DSH (?:EasyRemote Connector|Remote Hub)[^\r\n]*(?:\r?\n|$))?- insert:[ \t]*(?:\r?\n)[ \t]{4}- id: (?:dsh-easyremote-connector|dsh-remote-hub-connector)[ \t]*(?:\r?\n)[ \t]{6}name: ['"]?(?:@hakimedes\/dsh-easyremote-connector|@dsh-remote\/hub-connector)['"]?[ \t]*(?:\r?\n|$)/gm;
 
 function assertProfileName(profile: string) {
   if (!/^[a-zA-Z0-9._-]+$/.test(profile)) throw new Error('Invalid DSH profile name');
@@ -56,12 +55,16 @@ export function inferDshHomeFromProfileOutput(output: string, profile: string) {
   return null;
 }
 
-export function updateCordisPatch(existing: string): string {
-  let updated = existing
-    .replaceAll("name: '@dsh-remote/hub-connector'", `name: '${CONNECTOR_PACKAGE}'`)
-    .replaceAll('id: dsh-remote-hub-connector', 'id: dsh-easyremote-connector');
-  if (!updated.includes(`name: '${CONNECTOR_PACKAGE}'`)) updated = `${updated.trimEnd()}${CONNECTOR_BLOCK}`;
-  if (!updated.endsWith('\n')) updated += '\n';
+export function cleanupLegacyConnectorPatches(existing: string): string {
+  let updated = existing.replace(MANAGED_CONNECTOR_PATCH, '');
+  const newline = existing.includes('\r\n') ? '\r\n' : '\n';
+  const hasPatchData = updated
+    .split(/\r?\n/)
+    .some((line) => line.trim() && !line.trimStart().startsWith('#'));
+  if (!hasPatchData) {
+    updated = `${updated.trimEnd()}${updated.trimEnd() ? newline : ''}[]${newline}`;
+  }
+  if (!updated.endsWith('\n')) updated += newline;
   return updated;
 }
 
