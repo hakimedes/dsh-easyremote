@@ -82,7 +82,7 @@ export function buildHubLaunch(
       HUB_ENTRY: `http://127.0.0.1:${port}`,
       JWT_SECRET: jwtSecret,
       NODE_ENV: 'production',
-      DSH_EASYREMOTE_VERSION: '0.2.7',
+      DSH_EASYREMOTE_VERSION: '0.2.8',
     },
   };
 }
@@ -104,12 +104,23 @@ export function buildNamedTunnelLaunch(paths: RuntimePaths, tunnelId: string, ex
   };
 }
 
-export function writeConnectorConfig(paths: RuntimePaths, hubUrl: string, nodeName?: string, defaultCwd?: string) {
+export function writeConnectorConfig(
+  paths: RuntimePaths,
+  hubUrl: string,
+  nodeName?: string,
+  defaultCwd?: string,
+  publicOrigin?: string,
+) {
   const parsed = new URL(hubUrl);
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('Connector Hub URL must use HTTP or HTTPS');
+  const parsedPublicOrigin = publicOrigin ? new URL(publicOrigin) : null;
+  if (parsedPublicOrigin && parsedPublicOrigin.protocol !== 'https:' && parsedPublicOrigin.protocol !== 'http:') {
+    throw new Error('Connector public origin must use HTTP or HTTPS');
+  }
   writeSecureJson(paths.connectorConfig, {
     schemaVersion: 1,
     hubUrl: parsed.origin,
+    ...(parsedPublicOrigin ? { publicOrigin: parsedPublicOrigin.origin } : {}),
     ...(nodeName?.trim() ? { nodeName: nodeName.trim() } : {}),
     ...(defaultCwd?.trim() ? { defaultCwd: defaultCwd.trim() } : {}),
   });

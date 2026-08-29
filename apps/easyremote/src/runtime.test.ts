@@ -50,7 +50,13 @@ describe('local runtime configuration', () => {
   it('writes Connector, origin, and named ingress files without exposing Hub publicly', () => {
     const root = mkdtempSync(join(tmpdir(), 'easyremote-runtime-'));
     const paths = createRuntimePaths(root);
-    writeConnectorConfig(paths, 'https://dsh.example.com', 'Studio Mac');
+    writeConnectorConfig(
+      paths,
+      'http://127.0.0.1:8787',
+      'Studio Mac',
+      undefined,
+      'https://dsh.example.com',
+    );
     writePublicEntry(paths, 'https://dsh.example.com');
     writeNamedTunnelConfig(paths, {
       tunnelId: '46a2bf0d-c954-4b75-a174-ac55284715c6',
@@ -61,7 +67,8 @@ describe('local runtime configuration', () => {
 
     expect(JSON.parse(readFileSync(paths.connectorConfig, 'utf8'))).toEqual({
       schemaVersion: 1,
-      hubUrl: 'https://dsh.example.com',
+      hubUrl: 'http://127.0.0.1:8787',
+      publicOrigin: 'https://dsh.example.com',
       nodeName: 'Studio Mac',
     });
     expect(JSON.parse(readFileSync(paths.publicEntry, 'utf8'))).toEqual({ publicOrigin: 'https://dsh.example.com' });

@@ -16,7 +16,8 @@ describe('Connector config', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'dsh-connector-config-')), 'connector.json');
     writeFileSync(path, JSON.stringify({
       schemaVersion: 1,
-      hubUrl: 'https://temporary.trycloudflare.com/',
+      hubUrl: 'http://127.0.0.1:8787/',
+      publicOrigin: 'https://temporary.trycloudflare.com/',
       nodeName: '  Studio Mac  ',
       defaultCwd: '/workspace/project',
     }));
@@ -30,7 +31,8 @@ describe('Connector config', () => {
       fallbackNodeName: 'Host Name',
     })).toEqual({
       schemaVersion: 1,
-      hubUrl: 'https://temporary.trycloudflare.com',
+      hubUrl: 'http://127.0.0.1:8787',
+      publicOrigin: 'https://temporary.trycloudflare.com',
       nodeName: 'Studio Mac',
       defaultCwd: '/workspace/project',
       source: 'file',

@@ -13,7 +13,7 @@ dsh-easyremote doctor
 | Deep setup waits on NS | Compare the two expected Cloudflare Nameservers with public DNS. Remove stale DNSSEC/DS records at the registrar if Cloudflare reports them. Propagation can take hours. |
 | Tunnel name already exists | Verify the browser authorized the intended Cloudflare account. Re-enter setup; the installer reuses a matching local Tunnel ID and does not delete unknown tunnels. |
 | Fixed hostname has a DNS conflict | Remove or rename the conflicting A/AAAA/CNAME record in Cloudflare, then retry the DNS route step. |
-| Connector stays offline | Restart DSH, inspect `~/.dsh-easyremote/connector.json`, and check that its `hubUrl` equals `status` output. |
+| Connector stays offline | Restart DSH, inspect `~/.dsh-easyremote/connector.json`, and check that `hubUrl` is the local Hub shown by `doctor` (normally `http://127.0.0.1:8787`) while `publicOrigin` is the current Tunnel URL. |
 | Connection QR does not appear in setup | Restart DSH Web once after the Connector is first installed. The setup page polls `~/.dsh-easyremote/pairing.json` automatically. |
 | Phone remains on pairing screen | Open DSH Web **Settings → Remote** and select **Generate connection QR** or **Refresh connection QR**. Expired or replaced tokens cannot be reused. |
 | Hub ID mismatch | Do not proceed unless this is an intentional new installation. Sign out before changing Hub; a recovery QR is valid only for the same Hub identity. |

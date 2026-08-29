@@ -45,9 +45,9 @@ import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setu
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
 import { startWizardServer, type WizardAction } from './wizard.js';
 
-const VERSION = '0.2.7';
+const VERSION = '0.2.8';
 const PACKAGE_NAME = '@hakimedes/dsh-easyremote';
-const CONNECTOR_VERSION = '0.2.2';
+const CONNECTOR_VERSION = '0.2.3';
 const COMMUNITY_APK_NAME = 'DSH-EasyRemote-Community.apk';
 const RELEASE_BASE = 'https://github.com/hakimedes/dsh-easyremote/releases/latest/download';
 const CLI_SCRIPT = fileURLToPath(import.meta.url);
@@ -284,7 +284,7 @@ async function doctorCommand(args: string[]) {
       connectorConfig: async () => ({ ok: existsSync(paths.connectorConfig), detail: paths.connectorConfig }),
       connectorRuntime: async () => inspectConnectorRuntime({
         pairingStatePath: paths.pairingState,
-        expectedHub: state?.tunnel.publicOrigin,
+        expectedHub: state ? `http://${state.hub.host}:${state.hub.port}` : undefined,
       }),
       nameservers: async () => {
         if (state?.activeMode !== 'named') return { ok: true, detail: 'not required in quick mode' };

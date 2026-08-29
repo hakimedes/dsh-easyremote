@@ -78,13 +78,14 @@ dsh-easyremote setup
 ```json
 {
   "schemaVersion": 1,
-  "hubUrl": "https://your-current-hub.example",
+  "hubUrl": "http://127.0.0.1:8787",
+  "publicOrigin": "https://your-current-hub.example",
   "nodeName": "Optional computer name",
   "defaultCwd": "/optional/workspace"
 }
 ```
 
-公网地址变化时 Connector 自动关闭旧连接并连接新 Hub，不改变 Node Secret 或 Install ID。环境变量仍作为兼容回退。
+Connector 始终通过回环地址直连本机 Hub，避免电脑端请求绕经 Cloudflare 后再回到本机。`publicOrigin` 只用于检测公网入口变化并轮换手机恢复二维码；它变化时不会改变 Node Secret 或 Install ID。环境变量仍作为兼容回退。
 
 从引导页扫码下载 Community APK，或在 ADB 已连接时点击一键安装。Tunnel 与 Connector 就绪后，引导页会自动显示第二个、用于连接手机的一次性二维码。首次扫描 Hub 二维码时，Community APK 会显示域名确认；一个 App 同时只绑定一个 Hub。更换无关 Hub 必须退出登录，合法恢复二维码只能重绑同一个 `hubId`。
 

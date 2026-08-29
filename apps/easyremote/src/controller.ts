@@ -64,9 +64,10 @@ export class EasyRemoteController {
       throw new Error('EasyRemote is already running in this process');
     }
     const port = await this.dependencies.findPort(previous?.hub.port);
+    const localOrigin = `http://127.0.0.1:${port}`;
     await this.dependencies.ensureCloudflared();
     const jwtSecret = this.loadOrCreateJwtSecret();
-    writePublicEntry(this.paths, `http://127.0.0.1:${port}`);
+    writePublicEntry(this.paths, localOrigin);
     writeQuickTunnelConfig(this.paths);
 
     try {
@@ -75,7 +76,7 @@ export class EasyRemoteController {
         'hub',
       );
       this.writePid(this.paths.hubPid, this.hubProcess.pid);
-      const localMeta = await this.dependencies.waitForHub(`http://127.0.0.1:${port}`);
+      const localMeta = await this.dependencies.waitForHub(localOrigin);
       this.assertHubIdentity(previous, localMeta);
 
       this.tunnelProcess = this.dependencies.spawnProcess(
@@ -85,7 +86,13 @@ export class EasyRemoteController {
       this.writePid(this.paths.tunnelPid, this.tunnelProcess.pid);
       const publicOrigin = await this.dependencies.waitForQuick(this.tunnelProcess);
       writePublicEntry(this.paths, publicOrigin);
-      writeConnectorConfig(this.paths, publicOrigin, this.dependencies.nodeName?.() ?? hostname());
+      writeConnectorConfig(
+        this.paths,
+        localOrigin,
+        this.dependencies.nodeName?.() ?? hostname(),
+        undefined,
+        publicOrigin,
+      );
 
       const state: InstallState = {
         schemaVersion: 1,
@@ -119,17 +126,24 @@ export class EasyRemoteController {
       throw new Error('Named Tunnel is not configured; run setup first');
     }
     const port = await this.dependencies.findPort(previous.hub.port);
+    const localOrigin = `http://127.0.0.1:${port}`;
     await this.dependencies.ensureCloudflared();
     const jwtSecret = this.loadOrCreateJwtSecret();
     writePublicEntry(this.paths, previous.tunnel.publicOrigin);
-    writeConnectorConfig(this.paths, previous.tunnel.publicOrigin, this.dependencies.nodeName?.() ?? hostname());
+    writeConnectorConfig(
+      this.paths,
+      localOrigin,
+      this.dependencies.nodeName?.() ?? hostname(),
+      undefined,
+      previous.tunnel.publicOrigin,
+    );
     try {
       this.hubProcess = this.dependencies.spawnProcess(
         buildHubLaunch(this.paths, port, jwtSecret, this.dependencies.hubScript),
         'hub',
       );
       this.writePid(this.paths.hubPid, this.hubProcess.pid);
-      const localMeta = await this.dependencies.waitForHub(`http://127.0.0.1:${port}`);
+      const localMeta = await this.dependencies.waitForHub(localOrigin);
       this.assertHubIdentity(previous, localMeta);
       this.tunnelProcess = this.dependencies.spawnProcess(
         buildNamedTunnelLaunch(this.paths, previous.tunnel.tunnelId, this.paths.cloudflaredExecutable),
@@ -158,6 +172,7 @@ export class EasyRemoteController {
     if (this.running) await this.stop();
     const previous = loadInstallState(this.paths.installState);
     const port = await this.dependencies.findPort(previous?.hub.port);
+    const localOrigin = `http://127.0.0.1:${port}`;
     await this.dependencies.ensureCloudflared();
     const jwtSecret = this.loadOrCreateJwtSecret();
     const publicOrigin = `https://${options.hostname}`;
@@ -168,7 +183,7 @@ export class EasyRemoteController {
         'hub',
       );
       this.writePid(this.paths.hubPid, this.hubProcess.pid);
-      const localMeta = await this.dependencies.waitForHub(`http://127.0.0.1:${port}`);
+      const localMeta = await this.dependencies.waitForHub(localOrigin);
       this.assertHubIdentity(previous, localMeta);
       const credentials = await this.dependencies.provisionNamed({
         executable: this.paths.cloudflaredExecutable,
@@ -183,7 +198,13 @@ export class EasyRemoteController {
         hostname: options.hostname,
         hubPort: port,
       });
-      writeConnectorConfig(this.paths, publicOrigin, this.dependencies.nodeName?.() ?? hostname());
+      writeConnectorConfig(
+        this.paths,
+        localOrigin,
+        this.dependencies.nodeName?.() ?? hostname(),
+        undefined,
+        publicOrigin,
+      );
       this.tunnelProcess = this.dependencies.spawnProcess(
         buildNamedTunnelLaunch(this.paths, credentials.tunnelId, this.paths.cloudflaredExecutable),
         'tunnel',

@@ -23,7 +23,7 @@ export const name = 'dsh-easyremote-connector';
 export const inject = ['webServer', 'agents', 'sessionQuery', 'agentDefaultModel', 'approval', 'apiProxy'];
 
 const PROTOCOL_VERSION = 1;
-const PLUGIN_VERSION = '0.2.2';
+const PLUGIN_VERSION = '0.2.3';
 const HEARTBEAT_MS = 15_000;
 const APPROVAL_TTL_MS = 10 * 60_000;
 const PAIR_POLL_MS = 800;
@@ -225,6 +225,7 @@ function requestBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<JsonRe
 class HubConnector {
   private hubUrl: string;
   private hubWsUrl: string;
+  private publicOrigin?: string;
   private nodeName: string;
   private defaultCwd?: string;
   private readonly dshVersion: string;
@@ -262,6 +263,7 @@ class HubConnector {
     const config = loadConnectorConfig({ path: this.configPath, fallbackNodeName: hostname() });
     this.hubUrl = config.hubUrl;
     this.hubWsUrl = wsUrl(this.hubUrl);
+    this.publicOrigin = config.publicOrigin;
     this.nodeName = config.nodeName;
     this.defaultCwd = config.defaultCwd;
     this.dshVersion = process.env.DSH_VERSION || '0.1.0-rc.6';
@@ -328,13 +330,15 @@ class HubConnector {
     }
 
     const endpointChanged = next.hubUrl !== this.hubUrl;
+    const publicOriginChanged = next.publicOrigin !== this.publicOrigin;
     const nodeNameChanged = next.nodeName !== this.nodeName;
     this.hubUrl = next.hubUrl;
     this.hubWsUrl = wsUrl(next.hubUrl);
+    this.publicOrigin = next.publicOrigin;
     this.nodeName = next.nodeName;
     this.defaultCwd = next.defaultCwd;
-    if (!endpointChanged && !nodeNameChanged) return;
-    if (shouldRotateRecoveryAfterReconnect(endpointChanged, this.identity.nodeId)) {
+    if (!endpointChanged && !publicOriginChanged && !nodeNameChanged) return;
+    if (shouldRotateRecoveryAfterReconnect(endpointChanged || publicOriginChanged, this.identity.nodeId)) {
       this.rotateRecoveryOnAck = true;
     }
 

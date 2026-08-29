@@ -5,6 +5,7 @@ import { join } from 'node:path';
 export type ConnectorConfigFile = {
   schemaVersion: 1;
   hubUrl: string;
+  publicOrigin?: string;
   nodeName?: string;
   defaultCwd?: string;
 };
@@ -61,6 +62,7 @@ export function loadConnectorConfig(options: LoadOptions = {}): ResolvedConnecto
     return {
       schemaVersion: 1,
       hubUrl: asHttpUrl(config.hubUrl),
+      ...(typeof config.publicOrigin === 'string' ? { publicOrigin: asHttpUrl(config.publicOrigin) } : {}),
       nodeName: optionalString(config.nodeName) || fallbackNodeName,
       ...(optionalString(config.defaultCwd) ? { defaultCwd: optionalString(config.defaultCwd) } : {}),
       source: 'file',

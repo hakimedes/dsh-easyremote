@@ -47,7 +47,8 @@ describe('EasyRemote controller', () => {
       tunnel: { publicOrigin: 'https://black-whale.trycloudflare.com' },
     });
     expect(loadInstallState(paths.installState)).toEqual(result.state);
-    expect(JSON.parse(readFileSync(paths.connectorConfig, 'utf8')).hubUrl).toBe('https://black-whale.trycloudflare.com');
+    expect(JSON.parse(readFileSync(paths.connectorConfig, 'utf8')).hubUrl).toBe('http://127.0.0.1:8787');
+    expect(JSON.parse(readFileSync(paths.publicEntry, 'utf8')).publicOrigin).toBe('https://black-whale.trycloudflare.com');
     expect(spawnProcess).toHaveBeenCalledTimes(2);
   });
 
@@ -132,6 +133,8 @@ describe('EasyRemote controller', () => {
     expect(result.state.installId).toBe('stable-install-id');
     expect(spawnProcess).toHaveBeenCalledTimes(2);
     expect(spawnProcess.mock.calls[1][0].args).toContain('stable-tunnel-id');
+    expect(JSON.parse(readFileSync(paths.connectorConfig, 'utf8')).hubUrl).toBe('http://127.0.0.1:8787');
+    expect(JSON.parse(readFileSync(paths.publicEntry, 'utf8')).publicOrigin).toBe('https://dsh.example.com');
   });
 
   it('upgrades Quick state to a Named Tunnel without replacing Hub or install identity', async () => {
@@ -172,6 +175,8 @@ describe('EasyRemote controller', () => {
     });
     expect(result.recoveryRequired).toBe(true);
     expect(readFileSync(paths.namedConfig, 'utf8')).toContain('named-tunnel-id');
+    expect(JSON.parse(readFileSync(paths.connectorConfig, 'utf8')).hubUrl).toBe('http://127.0.0.1:8787');
+    expect(JSON.parse(readFileSync(paths.publicEntry, 'utf8')).publicOrigin).toBe('https://dsh.example.com');
   });
 
   it('notifies the foreground CLI if either managed process exits', async () => {
