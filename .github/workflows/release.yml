@@ -138,7 +138,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p release
-          gh release download "${{ needs.mobile-changes.outputs.previous_tag }}" --pattern DSH-EasyRemote-Community.apk --dir release
+          gh release download "${{ needs.mobile-changes.outputs.previous_tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern DSH-EasyRemote-Community.apk \
+            --dir release
       - uses: actions/upload-artifact@v4
         with:
           name: community-apk

@@ -45,7 +45,7 @@ import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setu
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
 import { startWizardServer, type WizardAction } from './wizard.js';
 
-const VERSION = '0.2.5';
+const VERSION = '0.2.6';
 const PACKAGE_NAME = '@hakimedes/dsh-easyremote';
 const CONNECTOR_VERSION = '0.2.1';
 const COMMUNITY_APK_NAME = 'DSH-EasyRemote-Community.apk';
@@ -468,7 +468,11 @@ async function installPackagedConnector(profile: string) {
     directory: join(paths.root, 'bin'),
     platform: process.platform,
     nodeExecutable: process.execPath,
-    pnpmScript: resolveBundledPnpmScript(),
+    pnpmScripts: {
+      v9: resolveBundledPnpmScript('pnpm'),
+      v10: resolveBundledPnpmScript('pnpm-v10'),
+      v11: resolveBundledPnpmScript('pnpm-v11'),
+    },
   });
   const dshEnvironment = prependExecutableDirectory(process.env, managedBin);
   await runProcessLaunch(buildConnectorInstallLaunch(dshExecutable, profile, packagePath, dshEnvironment), true);

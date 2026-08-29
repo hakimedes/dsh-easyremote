@@ -40,6 +40,58 @@ describe('GitHub Release workflow', () => {
     );
   });
 
+  it('downloads the previous APK without relying on a checked-out repository', () => {
+    const workflow = readFileSync(
+      new URL('../../../.github/workflows/release.yml', import.meta.url),
+      'utf8',
+    );
+    const reuseStep = workflow.match(
+      /- name: Reuse previous signed Community APK\n(?:\s{8}.*\n)*?\s{8}run: \|\n((?:\s{10}.*\n?)+)/,
+    );
+
+    expect(reuseStep).not.toBeNull();
+
+    const script = reuseStep![1]
+      .replace(/^ {10}/gm, '')
+      .replaceAll('${{ needs.mobile-changes.outputs.previous_tag }}', 'v0.2.5')
+      .replaceAll('${{ github.repository }}', 'hakimedes/dsh-easyremote');
+    const workspace = mkdtempSync(join(tmpdir(), 'dsh-release-apk-reuse-'));
+    const fakeBin = join(workspace, 'bin');
+    const capturedArgs = join(workspace, 'gh-args.txt');
+
+    try {
+      mkdirSync(fakeBin);
+      writeFileSync(
+        join(fakeBin, 'gh'),
+        '#!/bin/sh\nprintf "%s\\n" "$@" > "$CAPTURED_ARGS"\n',
+      );
+      chmodSync(join(fakeBin, 'gh'), 0o755);
+
+      execFileSync('bash', ['-e', '-c', script], {
+        cwd: workspace,
+        env: {
+          ...process.env,
+          CAPTURED_ARGS: capturedArgs,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+      });
+
+      expect(readFileSync(capturedArgs, 'utf8').trim().split('\n')).toEqual([
+        'release',
+        'download',
+        'v0.2.5',
+        '--repo',
+        'hakimedes/dsh-easyremote',
+        '--pattern',
+        'DSH-EasyRemote-Community.apk',
+        '--dir',
+        'release',
+      ]);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
   it('passes the npm tarball as an explicit local file path', () => {
     const workflow = readFileSync(
       new URL('../../../.github/workflows/release.yml', import.meta.url),

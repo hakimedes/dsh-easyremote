@@ -68,4 +68,16 @@ describe('default local runtime adapters', () => {
       stderr.mockRestore();
     }
   });
+
+  it('includes child stdout when an interactive package manager command fails', async () => {
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      await expect(runProcessLaunch({
+        command: process.execPath,
+        args: ['-e', "process.stdout.write('ERR_PNPM_UNEXPECTED_STORE profile uses store v11'); process.exit(1)"],
+      }, true)).rejects.toThrow('Command failed (1): ERR_PNPM_UNEXPECTED_STORE profile uses store v11');
+    } finally {
+      stdout.mockRestore();
+    }
+  });
 });

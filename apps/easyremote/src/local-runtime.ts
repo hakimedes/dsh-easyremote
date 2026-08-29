@@ -115,8 +115,9 @@ export function runProcessLaunch(launch: ProcessLaunch, interactive = false): Pr
       stdio: [interactive ? 'inherit' : 'ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
-    const errors: Buffer[] = [];
-    child.stderr?.on('data', (chunk: Buffer) => errors.push(chunk));
+    const details: Buffer[] = [];
+    child.stdout?.on('data', (chunk: Buffer) => details.push(chunk));
+    child.stderr?.on('data', (chunk: Buffer) => details.push(chunk));
     if (interactive) {
       child.stdout?.pipe(process.stdout, { end: false });
       child.stderr?.pipe(process.stderr, { end: false });
@@ -124,7 +125,10 @@ export function runProcessLaunch(launch: ProcessLaunch, interactive = false): Pr
     child.once('error', reject);
     child.once('close', (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`Command failed (${code ?? 'signal'}): ${Buffer.concat(errors).toString('utf8').trim()}`));
+      else {
+        const detail = Buffer.concat(details).toString('utf8').trim();
+        reject(new Error(`Command failed (${code ?? 'signal'})${detail ? `: ${detail}` : ''}`));
+      }
     });
   });
 }

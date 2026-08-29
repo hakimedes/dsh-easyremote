@@ -1,6 +1,6 @@
 {
   "name": "@hakimedes/dsh-easyremote",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Local-first DSH EasyRemote installer, Hub and Cloudflare Tunnel supervisor",
   "type": "module",
   "bin": {
@@ -21,7 +21,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "build": "pnpm -C ../hub build && pnpm -C ../dsh-plugin build && tsc -p tsconfig.json && node scripts/build-runtime.mjs",
+    "build": "node node_modules/pnpm/bin/pnpm.cjs -C ../hub build && node node_modules/pnpm/bin/pnpm.cjs -C ../dsh-plugin build && tsc -p tsconfig.json && node scripts/build-runtime.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -31,6 +31,8 @@
     "fastify": "^4.29.0",
     "jose": "^5.9.6",
     "pnpm": "9.12.0",
+    "pnpm-v10": "npm:pnpm@10.34.5",
+    "pnpm-v11": "npm:pnpm@11.24.0",
     "qrcode": "^1.5.4",
     "uuid": "^11.1.0",
     "ws": "^8.18.0",
