@@ -11,7 +11,7 @@ export async function waitForHubMeta(origin: string, options: {
   retryMs?: number;
 } = {}): Promise<HubMeta> {
   const fetcher = options.fetcher ?? fetch;
-  const timeoutMs = options.timeoutMs ?? 15_000;
+  const timeoutMs = options.timeoutMs ?? (origin.startsWith('http://127.0.0.1:') ? 15_000 : 60_000);
   const retryMs = options.retryMs ?? 150;
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown;
@@ -29,7 +29,7 @@ export async function waitForHubMeta(origin: string, options: {
       await new Promise((resolve) => setTimeout(resolve, retryMs));
     }
   }
-  throw new Error(`Local Hub did not become ready: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+  throw new Error(`Hub did not become ready through ${origin}: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
 export function waitForQuickOrigin(

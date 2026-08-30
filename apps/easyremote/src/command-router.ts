@@ -21,7 +21,10 @@ export async function routeCommand(
 ) {
   const command = args[0];
   if (!command) {
-    return context.loadState() ? context.handlers.start([]) : context.handlers.setup([]);
+    const state = context.loadState();
+    return !state || state.activeMode === 'quick'
+      ? context.handlers.setup([])
+      : context.handlers.start([]);
   }
   const handlerName = command === 'service-run' ? 'serviceRun' : command;
   const handler = context.handlers[handlerName as keyof CommandHandlers];

@@ -17,6 +17,29 @@ describe('local process supervision', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it('waits through a delayed QUIC to HTTP/2 fallback before timing out', async () => {
+    let elapsedMs = 0;
+    const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => elapsedMs);
+    const fetcher = vi.fn(async () => {
+      elapsedMs += 4_000;
+      if (elapsedMs < 20_000) throw new Error('fetch failed');
+      return new Response(JSON.stringify({
+        hubId: 'hub-id',
+        publicOrigin: 'https://black-whale.trycloudflare.com',
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    try {
+      await expect(waitForHubMeta('https://black-whale.trycloudflare.com', { fetcher, retryMs: 0 }))
+        .resolves.toMatchObject({ hubId: 'hub-id' });
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
   it('resolves a Quick Tunnel origin from either cloudflared output stream', async () => {
     const stdout = new PassThrough();
     const stderr = new PassThrough();

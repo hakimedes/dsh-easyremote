@@ -18,6 +18,17 @@ describe('smart CLI entry', () => {
     expect(handlers.start).toHaveBeenCalledOnce();
   });
 
+  it('opens the wizard before restarting a configured Quick Tunnel', async () => {
+    const handlers = { setup: vi.fn(), start: vi.fn(), quick: vi.fn() };
+    await routeCommand([], {
+      loadState: () => ({ activeMode: 'quick' }),
+      handlers,
+    });
+
+    expect(handlers.setup).toHaveBeenCalledOnce();
+    expect(handlers.start).not.toHaveBeenCalled();
+  });
+
   it('rejects remote deployment commands instead of silently accepting them', async () => {
     await expect(routeCommand(['deploy'], {
       loadState: () => null,
