@@ -85,6 +85,10 @@ export class EasyRemoteController {
       );
       this.writePid(this.paths.tunnelPid, this.tunnelProcess.pid);
       const publicOrigin = await this.dependencies.waitForQuick(this.tunnelProcess);
+      const publicMeta = await this.dependencies.waitForHub(publicOrigin);
+      if (publicMeta.hubId !== localMeta.hubId) {
+        throw new Error('Public Hub identity mismatch: the Quick Tunnel is not routing to this installation');
+      }
       writePublicEntry(this.paths, publicOrigin);
       writeConnectorConfig(
         this.paths,

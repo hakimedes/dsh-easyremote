@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -50,6 +50,45 @@ describe('EasyRemote controller', () => {
     expect(JSON.parse(readFileSync(paths.connectorConfig, 'utf8')).hubUrl).toBe('http://127.0.0.1:8787');
     expect(JSON.parse(readFileSync(paths.publicEntry, 'utf8')).publicOrigin).toBe('https://black-whale.trycloudflare.com');
     expect(spawnProcess).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not publish Quick mode before the public Hub is reachable', async () => {
+    const paths = createRuntimePaths(mkdtempSync(join(tmpdir(), 'easyremote-controller-')));
+    let releasePublicHub!: (value: { hubId: string; publicOrigin: string }) => void;
+    const publicHubReady = new Promise<{ hubId: string; publicOrigin: string }>((resolve) => {
+      releasePublicHub = resolve;
+    });
+    const controller = new EasyRemoteController(paths, {
+      ensureCloudflared: async () => {},
+      findPort: async () => 8787,
+      spawnProcess: () => child(),
+      waitForHub: async (origin) => {
+        if (origin === 'http://127.0.0.1:8787') {
+          return { hubId: 'stable-hub-id', publicOrigin: origin };
+        }
+        return publicHubReady;
+      },
+      waitForQuick: async () => 'https://black-whale.trycloudflare.com',
+      hubScript: '/runtime/hub/index.js',
+      createInstallId: () => 'stable-install-id',
+    });
+
+    const starting = controller.startQuick();
+    const stateAfterUrl = await Promise.race([
+      starting.then(() => 'published'),
+      new Promise<'waiting'>((resolve) => setImmediate(() => resolve('waiting'))),
+    ]);
+
+    expect(stateAfterUrl).toBe('waiting');
+    expect(existsSync(paths.connectorConfig)).toBe(false);
+    releasePublicHub({
+      hubId: 'stable-hub-id',
+      publicOrigin: 'https://black-whale.trycloudflare.com',
+    });
+    await expect(starting).resolves.toMatchObject({
+      state: { tunnel: { publicOrigin: 'https://black-whale.trycloudflare.com' } },
+    });
+    expect(existsSync(paths.connectorConfig)).toBe(true);
   });
 
   it('keeps identity and data when Quick mode receives a new public address', async () => {
