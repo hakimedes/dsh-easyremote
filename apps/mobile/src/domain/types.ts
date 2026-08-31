@@ -20,7 +20,49 @@ export type Node = {
   lastSeenAt: number | null;
   revokedAt: number | null;
   online: boolean;
+  capabilities?: string[];
 };
+
+export type WorkspaceReference = {
+  path: string;
+  kind: 'file' | 'dir';
+  name?: string;
+};
+
+export type LocalUpload = {
+  localId: string;
+  uri: string;
+  kind: 'image' | 'file';
+  displayName: string;
+  mediaType: string;
+  byteSize: number;
+  width?: number;
+  height?: number;
+};
+
+export type RemoteUpload = {
+  id: string;
+  kind: 'image' | 'file';
+  displayName: string;
+  mediaType: string;
+  byteSize: number;
+  receivedBytes: number;
+  status: 'pending' | 'ready' | 'consumed';
+  sha256?: string;
+};
+
+export type MessageBlock =
+  | { type: 'text'; text: string }
+  | {
+    type: 'image';
+    attachmentId: string;
+    mediaType: string;
+    bytes: number;
+    width: number;
+    height: number;
+    name?: string;
+  }
+  | { type: 'workspace-reference'; path: string; kind: 'file' | 'dir' };
 
 export type AgentPreset = {
   id: string;
@@ -110,6 +152,7 @@ export type SessionMessage = {
   timestamp: number;
   sourceSeq: number;
   streaming?: boolean;
+  blocks?: MessageBlock[];
   tool?: {
     name: string;
     status: 'running' | 'complete' | 'failed';

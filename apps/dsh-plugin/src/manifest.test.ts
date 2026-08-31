@@ -31,6 +31,7 @@ describe('DSH plugin manifest', () => {
     expect(manifest.name).toBe(pkg.name);
     expect(manifest.entry.name).toBe(pkg.name);
     expect(manifest.entry.inject).toContain('apiProxy');
+    expect(manifest.entry.inject).toContain('systemPrompt');
     expect(pkg.dsh.bundle).toEqual({ patch: './cordis.patch.yml' });
     expect(readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8')).toBe([
       '- insert:',

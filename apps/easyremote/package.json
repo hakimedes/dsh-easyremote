@@ -1,6 +1,6 @@
 {
   "name": "@hakimedes/dsh-easyremote",
-  "version": "0.2.10",
+  "version": "0.3.0",
   "description": "Local-first DSH EasyRemote installer, Hub and Cloudflare Tunnel supervisor",
   "type": "module",
   "bin": {

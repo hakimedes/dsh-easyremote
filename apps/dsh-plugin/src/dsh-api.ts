@@ -15,6 +15,10 @@ type SelectModelInput = {
   reasoningEffort?: string;
 };
 
+type PromptPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mediaType: string; data: string; name?: string };
+
 export function toRemoteSessionSummary(
   session: any,
   title?: string,
@@ -107,6 +111,36 @@ export class DshApiBridge {
   async renameSession(sessionId: string, title: string) {
     return this.value<{ title: string; seq: number }>(
       await this.apiProxy.sessions.rename(this.request({ sessionId, title })),
+    );
+  }
+
+  supportsPromptParts() {
+    return typeof this.apiProxy?.sessions?.prompt === 'function';
+  }
+
+  async prompt(input: { requestId: string; sessionId: string; content: PromptPart[] }) {
+    if (!this.supportsPromptParts()) {
+      throw new DshApiBridgeError('CAPABILITY_UNAVAILABLE', 'This DSH version does not support native prompt parts');
+    }
+    return this.value<{ accepted: true }>(
+      await this.apiProxy.sessions.prompt({
+        rpcId: input.requestId,
+        payload: {
+          requestId: input.requestId,
+          sessionId: input.sessionId,
+          mode: 'queue',
+          content: input.content,
+        },
+      }),
+    );
+  }
+
+  async attachment(sessionId: string, attachmentId: string) {
+    if (typeof this.apiProxy?.sessions?.attachment !== 'function') {
+      throw new DshApiBridgeError('CAPABILITY_UNAVAILABLE', 'This DSH version does not support durable attachments');
+    }
+    return this.value<{ attachment: Record<string, unknown>; data: string }>(
+      await this.apiProxy.sessions.attachment(this.request({ sessionId, attachmentId })),
     );
   }
 }

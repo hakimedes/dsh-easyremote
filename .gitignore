@@ -28,6 +28,7 @@ sbom*.json
 apps/easyremote/runtime
 apps/dsh-plugin/lib
 apps/mobile/android/.gradle
+apps/mobile/android/.kotlin
 apps/mobile/android/app/build
 .DS_Store
 

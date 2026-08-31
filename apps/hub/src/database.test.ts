@@ -62,7 +62,7 @@ describe('Hub database migrations', () => {
     const secondHubId = getOrCreateHubId(reopened);
     reopened.close();
 
-    expect(versions.map(({ version }) => Number(version))).toEqual([1, 2, 3, 4]);
+    expect(versions.map(({ version }) => Number(version))).toEqual([1, 2, 3, 4, 5]);
     expect(command.result_json).toBeNull();
     expect(secondHubId).toBe(firstHubId);
   });

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -17,18 +17,24 @@ import WebSocket from 'ws';
 import { CommandReplayCache } from './command-cache.js';
 import { connectorConfigPath, loadConnectorConfig, watchConnectorConfig } from './connector-config.js';
 import { DshApiBridge, toRemoteSessionSummary } from './dsh-api.js';
+import {
+  fallbackWorkspaceReferences,
+  prepareMobilePrompt,
+  type UploadDescriptor,
+} from './mobile-content.js';
 import { normalizeDshEvent, type DshEvent } from './protocol.js';
 
 export const name = 'dsh-easyremote-connector';
-export const inject = ['webServer', 'agents', 'sessionQuery', 'agentDefaultModel', 'approval', 'apiProxy'];
+export const inject = ['webServer', 'agents', 'sessionQuery', 'agentDefaultModel', 'approval', 'apiProxy', 'systemPrompt'];
 
 const PROTOCOL_VERSION = 1;
-const PLUGIN_VERSION = '0.2.3';
+const PLUGIN_VERSION = '0.3.0';
 const HEARTBEAT_MS = 15_000;
 const APPROVAL_TTL_MS = 10 * 60_000;
 const PAIR_POLL_MS = 800;
 /** Longest the pair page / pair-data waits for a fresh QR before answering "preparing". */
 const PAIR_SNAPSHOT_WAIT_MS = 2_500;
+const MOBILE_GENUI_PROMPT = `When structured presentation is materially clearer, you may emit a fenced \`dsh-ui\` JSON block. Allowed types: text,row,col,grid,card,divider,badge,stat,progress,list,table,keyvalue,code,diff,chart,echart,mermaid,diagram,scene3d,button,input,textarea,select,checkbox,switch,slider,radio,submit,tabs,accordion. Keep JSON strict, at most 200 nodes and 8 nesting levels. Never request passwords, API keys, tokens, or recovery codes. Interactive model actions use an action string and arrive later as a [genui-action] follow-up. Do not emit HTML or JavaScript. Use ordinary Markdown for simple answers.`;
 
 type PairSnapshot = {
   ok: true;
@@ -228,6 +234,7 @@ class HubConnector {
   private publicOrigin?: string;
   private nodeName: string;
   private defaultCwd?: string;
+  private spoolDir?: string;
   private readonly dshVersion: string;
   private readonly configPath: string;
   private readonly pairingStatePath: string;
@@ -250,6 +257,10 @@ class HubConnector {
   private readonly pendingApprovals = new Map<string, PendingApproval>();
   private readonly commandCache = new CommandReplayCache<CommandResultFrame>(500);
   private readonly toolNamesBySession = new Map<string, Map<string, string>>();
+  private readonly pendingMobileRpcIds = new Set<string>();
+  private readonly pendingMobileMessageIds = new Set<string>();
+  private readonly mobileGenuiAgents = new WeakSet<object>();
+  private readonly hookedGenuiAgents = new WeakSet<object>();
   private readonly agents: any;
   private readonly sessionQuery: any;
   private readonly agentDefaultModel: any;
@@ -266,6 +277,7 @@ class HubConnector {
     this.publicOrigin = config.publicOrigin;
     this.nodeName = config.nodeName;
     this.defaultCwd = config.defaultCwd;
+    this.spoolDir = config.spoolDir;
     this.dshVersion = process.env.DSH_VERSION || '0.1.0-rc.6';
     const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh');
     this.identityPath = join(dshHome, 'remote-hub', 'node-identity.json');
@@ -283,6 +295,7 @@ class HubConnector {
       throw new Error('DSH Remote requires agents and sessionQuery services');
     }
     this.registerRoutes();
+    this.registerMobileGenuiPrompt();
     this.configWatchDisposer = watchConnectorConfig(
       this.configPath,
       () => this.reloadConnectorConfig(),
@@ -320,6 +333,42 @@ class HubConnector {
     this.ownedAgentHandles.clear();
   }
 
+  private registerMobileGenuiPrompt() {
+    const systemPrompt = this.ctx.get('systemPrompt');
+    systemPrompt.section({
+      name: 'dsh-easyremote:mobile-genui',
+      order: 106,
+      text: ({ agent }: { agent?: object }) => agent && this.mobileGenuiAgents.has(agent)
+        ? MOBILE_GENUI_PROMPT
+        : '',
+    });
+
+    const install = (agent: any) => {
+      if (!agent || this.hookedGenuiAgents.has(agent)) return;
+      this.hookedGenuiAgents.add(agent);
+      agent.ctx.on('agent/pre-step', async ({ messages }: { messages: any[] }, next: () => Promise<any>) => {
+        const isMobileStep = messages.some((message) => {
+          const rpcId = typeof message?.source?.rpcId === 'string' ? message.source.rpcId : '';
+          const messageId = typeof message?.id === 'string' ? message.id : '';
+          return this.pendingMobileRpcIds.has(rpcId) || this.pendingMobileMessageIds.has(messageId);
+        });
+        if (isMobileStep) {
+          this.mobileGenuiAgents.add(agent);
+          for (const message of messages) {
+            if (typeof message?.source?.rpcId === 'string') this.pendingMobileRpcIds.delete(message.source.rpcId);
+            if (typeof message?.id === 'string') this.pendingMobileMessageIds.delete(message.id);
+          }
+        }
+        const decision = await next();
+        if (decision?.kind === 'reject' && isMobileStep) this.mobileGenuiAgents.delete(agent);
+        return decision;
+      });
+    };
+
+    for (const agent of this.agents.list?.() || []) install(agent);
+    this.ctx.on('agent/created', ({ agent }: { agent: any }) => install(agent));
+  }
+
   private reloadConnectorConfig() {
     let next;
     try {
@@ -332,12 +381,14 @@ class HubConnector {
     const endpointChanged = next.hubUrl !== this.hubUrl;
     const publicOriginChanged = next.publicOrigin !== this.publicOrigin;
     const nodeNameChanged = next.nodeName !== this.nodeName;
+    const runtimeCapabilityChanged = next.spoolDir !== this.spoolDir;
     this.hubUrl = next.hubUrl;
     this.hubWsUrl = wsUrl(next.hubUrl);
     this.publicOrigin = next.publicOrigin;
     this.nodeName = next.nodeName;
     this.defaultCwd = next.defaultCwd;
-    if (!endpointChanged && !publicOriginChanged && !nodeNameChanged) return;
+    this.spoolDir = next.spoolDir;
+    if (!endpointChanged && !publicOriginChanged && !nodeNameChanged && !runtimeCapabilityChanged) return;
     if (shouldRotateRecoveryAfterReconnect(endpointChanged || publicOriginChanged, this.identity.nodeId)) {
       this.rotateRecoveryOnAck = true;
     }
@@ -671,6 +722,11 @@ class HubConnector {
           'session.stop',
           'session.events',
           'approval.respond',
+          'workspace.references',
+          ...(this.spoolDir ? ['workspace.upload'] : []),
+          ...(this.spoolDir && this.dshApi.supportsPromptParts()
+            ? ['session.prompt.parts', 'session.attachment.export']
+            : []),
         ],
       });
       if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
@@ -741,6 +797,10 @@ class HubConnector {
     const toolNames = this.toolNamesBySession.get(session.id) ?? new Map<string, string>();
     this.toolNamesBySession.set(session.id, toolNames);
     const normalized = normalizeDshEvent(source, toolNames);
+    if (source.type === 'step/end' || source.type === 'turn/end') {
+      const agent = this.agents.get(session.id);
+      if (agent) this.mobileGenuiAgents.delete(agent);
+    }
     if (!normalized) return;
     this.send({
       v: 1,
@@ -825,10 +885,18 @@ class HubConnector {
           String(frame.payload.title || ''),
         );
       case 'session.followup': {
-        const agent = await this.ensureAgent(String(frame.sessionId || ''));
-        agent.followup(this.userMessage(String(frame.payload.content || '')));
-        return { accepted: true };
+        return this.submitMobileFollowup(frame);
       }
+      case 'workspace.references':
+        return { references: await this.workspaceReferences(
+          String(frame.sessionId || ''),
+          String(frame.payload.query || ''),
+        ) };
+      case 'session.attachment.export':
+        return this.exportAttachment(
+          String(frame.sessionId || ''),
+          String(frame.payload.attachmentId || ''),
+        );
       case 'session.steer': {
         const agent = await this.ensureAgent(String(frame.sessionId || ''));
         agent.steer(this.userMessage(String(frame.payload.instruction || '')));
@@ -858,14 +926,117 @@ class HubConnector {
     }
   }
 
-  private userMessage(text: string) {
+  private userMessage(text: string, id = `remote-${uuidv7()}`) {
     if (!text.trim()) throw new Error('message content is empty');
     return {
-      id: `remote-${uuidv7()}`,
+      id,
       role: 'user',
       content: [{ type: 'text', text }],
       source: { kind: 'plugin', plugin: '@hakimedes/dsh-easyremote-connector' },
     };
+  }
+
+  private uploadDescriptors(value: unknown): UploadDescriptor[] {
+    if (!Array.isArray(value)) return [];
+    return value.map((item) => {
+      if (!isRecord(item)) throw new Error('upload descriptor is invalid');
+      const kind = item.kind === 'image' ? 'image' : item.kind === 'file' ? 'file' : null;
+      if (
+        !kind
+        || typeof item.uploadId !== 'string'
+        || typeof item.displayName !== 'string'
+        || typeof item.mediaType !== 'string'
+        || typeof item.byteSize !== 'number'
+        || typeof item.sha256 !== 'string'
+      ) throw new Error('upload descriptor is invalid');
+      return {
+        uploadId: item.uploadId,
+        kind,
+        displayName: item.displayName,
+        mediaType: item.mediaType,
+        byteSize: item.byteSize,
+        sha256: item.sha256,
+      };
+    });
+  }
+
+  private async submitMobileFollowup(frame: CommandFrame) {
+    const sessionId = String(frame.sessionId || '');
+    const agent = await this.ensureAgent(sessionId);
+    const uploads = this.uploadDescriptors(frame.payload.uploads);
+    if (uploads.length && !this.spoolDir) {
+      throw Object.assign(new Error('Connector spool directory is not configured'), { code: 'CAPABILITY_UNAVAILABLE' });
+    }
+    const references = Array.isArray(frame.payload.references)
+      ? frame.payload.references.flatMap((value) => {
+          if (!isRecord(value) || typeof value.path !== 'string') return [];
+          return [{ path: value.path, kind: value.kind === 'dir' ? 'dir' as const : 'file' as const }];
+        })
+      : [];
+    const cwd = typeof agent?.session?.header?.cwd === 'string'
+      ? agent.session.header.cwd
+      : this.defaultCwd || resolve(process.cwd());
+    const prepared = prepareMobilePrompt({
+      spoolDir: this.spoolDir || dirname(this.configPath),
+      cwd,
+      sessionId,
+      content: String(frame.payload.content || ''),
+      references,
+      uploads,
+    });
+
+    try {
+      if (this.dshApi.supportsPromptParts()) {
+        this.pendingMobileRpcIds.add(frame.requestId);
+        await this.dshApi.prompt({ requestId: frame.requestId, sessionId, content: prepared.parts });
+      } else {
+        if (prepared.parts.some((part) => part.type === 'image')) {
+          throw Object.assign(new Error('Upgrade DSH to send native image attachments'), { code: 'CAPABILITY_UNAVAILABLE' });
+        }
+        const text = prepared.parts.map((part) => part.type === 'text' ? part.text : '').join('\n').trim();
+        const messageId = `remote-${frame.requestId}`;
+        this.pendingMobileMessageIds.add(messageId);
+        agent.followup(this.userMessage(text, messageId));
+      }
+      return { accepted: true, workspacePaths: prepared.workspacePaths };
+    } catch (error) {
+      this.pendingMobileRpcIds.delete(frame.requestId);
+      this.pendingMobileMessageIds.delete(`remote-${frame.requestId}`);
+      prepared.rollback();
+      throw error;
+    }
+  }
+
+  private async workspaceReferences(sessionId: string, query: string) {
+    const agent = await this.ensureAgent(sessionId);
+    const native = this.ctx.reflect?.get?.('fileReferences', false);
+    if (native && typeof native.list === 'function') {
+      const candidates = await native.list(agent, query, AbortSignal.timeout(10_000));
+      return Array.isArray(candidates) ? candidates.slice(0, 100) : [];
+    }
+    const cwd = typeof agent?.session?.header?.cwd === 'string'
+      ? agent.session.header.cwd
+      : this.defaultCwd || resolve(process.cwd());
+    return fallbackWorkspaceReferences(cwd, query);
+  }
+
+  private async exportAttachment(sessionId: string, attachmentId: string) {
+    if (!this.spoolDir) {
+      throw Object.assign(new Error('Connector spool directory is not configured'), { code: 'CAPABILITY_UNAVAILABLE' });
+    }
+    const value = await this.dshApi.attachment(sessionId, attachmentId);
+    if (!isRecord(value.attachment) || typeof value.attachment.mediaType !== 'string' || typeof value.data !== 'string') {
+      throw new Error('DSH returned invalid attachment data');
+    }
+    const bytes = Buffer.from(value.data, 'base64');
+    if (typeof value.attachment.bytes === 'number' && value.attachment.bytes !== bytes.length) {
+      throw new Error('DSH attachment size does not match its metadata');
+    }
+    mkdirSync(this.spoolDir, { recursive: true, mode: 0o700 });
+    const exportToken = randomUUID();
+    const path = join(this.spoolDir, `${exportToken}.attachment`);
+    writeFileSync(path, bytes, { mode: 0o600, flag: 'wx' });
+    return { exportToken, attachment: value.attachment };
   }
 
   private async ensureAgent(sessionId: string) {

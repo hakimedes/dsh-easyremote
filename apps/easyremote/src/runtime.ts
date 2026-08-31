@@ -11,6 +11,7 @@ export type RuntimePaths = {
   publicEntry: string;
   dataDir: string;
   database: string;
+  spoolDir: string;
   secretsDir: string;
   jwtSecret: string;
   cloudflaredDir: string;
@@ -47,6 +48,7 @@ export function createRuntimePaths(root: string): RuntimePaths {
     publicEntry: join(root, 'public-origin.json'),
     dataDir,
     database: join(dataDir, 'hub.sqlite'),
+    spoolDir: join(root, 'spool'),
     secretsDir,
     jwtSecret: join(secretsDir, 'jwt-secret'),
     cloudflaredDir,
@@ -78,11 +80,12 @@ export function buildHubLaunch(
       HOST: '127.0.0.1',
       PORT: String(port),
       DATABASE_PATH: paths.database,
+      SPOOL_DIR: paths.spoolDir,
       HUB_ENTRY_FILE: paths.publicEntry,
       HUB_ENTRY: `http://127.0.0.1:${port}`,
       JWT_SECRET: jwtSecret,
       NODE_ENV: 'production',
-      DSH_EASYREMOTE_VERSION: '0.2.10',
+      DSH_EASYREMOTE_VERSION: '0.3.0',
     },
   };
 }
@@ -123,6 +126,7 @@ export function writeConnectorConfig(
     ...(parsedPublicOrigin ? { publicOrigin: parsedPublicOrigin.origin } : {}),
     ...(nodeName?.trim() ? { nodeName: nodeName.trim() } : {}),
     ...(defaultCwd?.trim() ? { defaultCwd: defaultCwd.trim() } : {}),
+    spoolDir: paths.spoolDir,
   });
 }
 

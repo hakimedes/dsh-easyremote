@@ -12,7 +12,7 @@ describe('normalizeDshEvent', () => {
     })).toEqual({
       sourceSeq: 0,
       createdAt: 123,
-      event: { type: 'user.message', data: { text: 'hello' } },
+      event: { type: 'user.message', data: { text: 'hello', blocks: [{ type: 'text', text: 'hello' }] } },
     });
   });
 
@@ -33,6 +33,13 @@ describe('normalizeDshEvent', () => {
       type: 'tool.call',
       data: { toolCallId: 'call-1', name: 'shell', input: '{"cmd":"pwd"}' },
     });
+
+    expect(normalizeDshEvent({
+      seq: 6,
+      time: 458,
+      type: 'tool/call',
+      data: { callId: 'call-ui', name: 'render_ui', arguments: { spec: { items: [{ type: 'text', content: 'Hello' }] } } },
+    })?.event.data.input).toBe('{"spec":{"items":[{"type":"text","content":"Hello"}]}}');
   });
 
   it('maps the native durable session title projection', () => {
@@ -42,6 +49,44 @@ describe('normalizeDshEvent', () => {
       type: 'session/title',
       data: { title: '探索深海模型', source: 'generated' },
     })?.event).toEqual({ type: 'session.title', data: { title: '探索深海模型' } });
+  });
+
+  it('publishes durable image metadata without exposing attachment bytes', () => {
+    const normalized = normalizeDshEvent({
+      seq: 7,
+      time: 459,
+      type: 'user/message',
+      data: {
+        content: [
+          { type: 'text', text: 'Describe this whale' },
+          {
+            type: 'image',
+            attachment: {
+              attachmentId: 'sha256:opaque',
+              mediaType: 'image/png',
+              bytes: 1234,
+              width: 640,
+              height: 480,
+              name: 'whale.png',
+            },
+          },
+        ],
+      },
+    });
+    expect(normalized?.event).toEqual({
+      type: 'user.message',
+      data: {
+        text: 'Describe this whale',
+        blocks: [
+          { type: 'text', text: 'Describe this whale' },
+          {
+            type: 'image', attachmentId: 'sha256:opaque', mediaType: 'image/png',
+            bytes: 1234, width: 640, height: 480, name: 'whale.png',
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(normalized)).not.toContain('base64');
   });
 
   it('ignores internal events outside the public canonical contract', () => {

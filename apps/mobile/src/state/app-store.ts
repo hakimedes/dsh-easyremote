@@ -3,11 +3,20 @@ import { create } from 'zustand';
 import { APP_VERSION, HUB_HTTP_URL } from '../config';
 import { apiClient } from '../api/client';
 import { RealtimeClient } from '../api/realtime';
-import type { AgentPreset, ApprovalRequest, ModelSelection, Node, PairingPayload, RealtimeStatus, SessionEvent, SessionModels, SessionSummary, SessionView, User } from '../domain/types';
+import type { AgentPreset, ApprovalRequest, LocalUpload, ModelSelection, Node, PairingPayload, RealtimeStatus, SessionEvent, SessionModels, SessionSummary, SessionView, User, WorkspaceReference } from '../domain/types';
 import { ApiError } from '../domain/types';
 import { readHubBinding } from '../storage/secure';
 import { cacheNodes, cacheSessionView, cacheSessions, cacheUser, readCachedNodes, readCachedSessionView, readCachedSessions, readCachedUser } from '../storage/database';
 import { emptySessionView, reduceSessionEvents } from './session-reducer';
+import { uploadLocalFiles } from '../api/uploads';
+import { clearAttachmentCache } from '../storage/attachment-cache';
+
+export type SendFollowupOptions = {
+  references?: WorkspaceReference[];
+  uploads?: LocalUpload[];
+  signal?: AbortSignal;
+  onProgress?: (progress: number, file: LocalUpload) => void;
+};
 
 type AppStateShape = {
   bootstrapped: boolean;
@@ -34,7 +43,8 @@ type AppStateShape = {
   loadSessionModels: (nodeId: string, sessionId: string) => Promise<SessionModels>;
   selectSessionModel: (nodeId: string, sessionId: string, selection: ModelSelection) => Promise<ModelSelection>;
   renameSession: (nodeId: string, sessionId: string, title: string) => Promise<string>;
-  sendFollowup: (nodeId: string, sessionId: string, content: string) => Promise<void>;
+  searchWorkspaceReferences: (nodeId: string, sessionId: string, query: string) => Promise<WorkspaceReference[]>;
+  sendFollowup: (nodeId: string, sessionId: string, content: string, options?: SendFollowupOptions) => Promise<void>;
   sendSteer: (nodeId: string, sessionId: string, instruction: string) => Promise<void>;
   stopSession: (nodeId: string, sessionId: string) => Promise<void>;
   respondApproval: (approvalId: string, response: 'allow_once' | 'deny') => Promise<void>;
@@ -289,8 +299,26 @@ export const useAppStore = create<AppStateShape>((set, get) => ({
     return response.title;
   },
 
-  sendFollowup: async (nodeId, sessionId, content) => {
-    await apiClient.followup(nodeId, sessionId, content);
+  searchWorkspaceReferences: (nodeId, sessionId, query) => apiClient.workspaceReferences(nodeId, sessionId, query),
+
+  sendFollowup: async (nodeId, sessionId, content, options = {}) => {
+    const remoteIds = options.uploads?.length ? await uploadLocalFiles({
+      api: apiClient,
+      nodeId,
+      sessionId,
+      files: options.uploads,
+      signal: options.signal,
+      onProgress: options.onProgress,
+    }) : [];
+    try {
+      await apiClient.followup(nodeId, sessionId, content, {
+        references: options.references,
+        uploadIds: remoteIds,
+      });
+    } catch (error) {
+      await Promise.allSettled(remoteIds.map((uploadId) => apiClient.deleteUpload(nodeId, sessionId, uploadId)));
+      throw error;
+    }
   },
 
   sendSteer: async (nodeId, sessionId, instruction) => {
@@ -353,6 +381,7 @@ export const useAppStore = create<AppStateShape>((set, get) => ({
   logout: async () => {
     realtime.disconnect();
     await apiClient.logout();
+    await clearAttachmentCache();
     set({ isAuthenticated: false, user: null, nodes: [], sessionsByNode: {}, sessionViews: {}, agentPresetsByNode: {}, sessionModels: {}, activePairing: null, approvals: [], realtimeStatus: 'offline' });
   },
 }));

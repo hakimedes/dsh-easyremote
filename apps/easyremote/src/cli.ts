@@ -45,9 +45,9 @@ import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setu
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
 import { startWizardServer, type WizardAction } from './wizard.js';
 
-const VERSION = '0.2.10';
+const VERSION = '0.3.0';
 const PACKAGE_NAME = '@hakimedes/dsh-easyremote';
-const CONNECTOR_VERSION = '0.2.3';
+const CONNECTOR_VERSION = '0.3.0';
 const COMMUNITY_APK_NAME = 'DSH-EasyRemote-Community.apk';
 const RELEASE_BASE = 'https://github.com/hakimedes/dsh-easyremote/releases/latest/download';
 const CLI_SCRIPT = fileURLToPath(import.meta.url);

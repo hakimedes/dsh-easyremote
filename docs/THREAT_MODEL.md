@@ -23,6 +23,9 @@ Primary assets are Hub/Owner identity, Node Secret, Mobile Refresh Token, one-ti
 | Native dependency supply-chain risk | Pinned cloudflared version and platform SHA-256 verification before execution. |
 | Stolen phone | SecureStore tokens, token rotation and explicit Node/mobile revocation. |
 | Exposed Hub port | Native Hub binds `127.0.0.1`; optional Docker example publishes only to host loopback. |
+| Upload path traversal or symlink escape | Hub accepts only sequential bounded chunks; Connector validates spool realpaths, regular files, sizes and SHA-256 before atomically copying to a fixed workspace directory without overwriting existing files. |
+| Malicious model-generated UI | Raw HTML and model JavaScript are disabled; the native renderer uses a bounded white list, while complex visuals run in a no-network/no-file CSP WebView with sanitized options. Password, token, secret and API-key fields are blocked. |
+| Attachment identifier theft | Mobile download routes require the authenticated Owner and Node/session authorization; Connector reads through DSH's authoritative attachment service and exports one-time spool files. |
 
 ## Out of scope for v1
 

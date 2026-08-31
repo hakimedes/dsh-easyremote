@@ -28,7 +28,9 @@
 
 ## 项目状态
 
-当前版本处于公开预览阶段。npm 公共包 `0.2.1` 与带长期签名的 Community APK `0.2.0` 已发布，可直接通过 `npx` 启动，并从 [GitHub Releases](https://github.com/hakimedes/dsh-easyremote/releases) 下载 Android 安装包。后续仍会继续进行更多真机和跨平台回归。
+当前版本处于公开预览阶段。npm 公共包与带长期签名的 Community APK 使用同一 `0.3.0` 版本发布；可直接通过 `npx` 启动，并从 [GitHub Releases](https://github.com/hakimedes/dsh-easyremote/releases) 下载 Android 安装包。后续仍会继续进行更多真机和跨平台回归。
+
+`0.3.0` 增加 Mobile 文件与富内容能力：可拍照、选择图片或文件、使用 `@` 搜索工作区路径，并在会话中安全渲染 Markdown、表格、表单、基础图表及受限 `dsh-ui` 可视化。普通文件只写入当前工作区的 `.dsh-easyremote/uploads/`；图片使用 DSH 原生持久附件，Hub 不保存文件字节或完整聊天正文。
 
 ## 最快开始：不需要域名
 

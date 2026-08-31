@@ -20,6 +20,7 @@ describe('Connector config', () => {
       publicOrigin: 'https://temporary.trycloudflare.com/',
       nodeName: '  Studio Mac  ',
       defaultCwd: '/workspace/project',
+      spoolDir: '/private/spool',
     }));
 
     expect(loadConnectorConfig({
@@ -35,6 +36,7 @@ describe('Connector config', () => {
       publicOrigin: 'https://temporary.trycloudflare.com',
       nodeName: 'Studio Mac',
       defaultCwd: '/workspace/project',
+      spoolDir: '/private/spool',
       source: 'file',
     });
   });

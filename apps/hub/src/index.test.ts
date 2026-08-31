@@ -1,7 +1,7 @@
 /// <reference types="vitest/globals" />
 
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -88,12 +88,14 @@ describe('DSH Hub P0 integration', () => {
   let ownerToken: string;
   let dbPath: string;
   let entryFile: string;
+  let spoolDir: string;
   const port = portCounter++;
 
   beforeEach(async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), 'dsh-hub-test-'));
     dbPath = join(tmpDir, 'hub.sqlite');
     entryFile = join(tmpDir, 'public-origin.json');
+    spoolDir = join(tmpDir, 'spool');
     writeFileSync(entryFile, JSON.stringify({ publicOrigin: 'https://dsh.example.com' }));
     baseUrl = `http://127.0.0.1:${port}`;
     wssUrl = `ws://127.0.0.1:${port}`;
@@ -110,6 +112,7 @@ describe('DSH Hub P0 integration', () => {
           JWT_SECRET: 'test-test-test-test-test-test-test-test',
           HUB_ENTRY: 'https://fallback.example.com',
           HUB_ENTRY_FILE: entryFile,
+          SPOOL_DIR: spoolDir,
           NODE_ENV: 'test',
         },
       },
@@ -355,6 +358,121 @@ describe('DSH Hub P0 integration', () => {
 
     nodeWs.close();
     mobileWs.close();
+  });
+
+  it('supports path-only workspace search, chunked uploads, and one-time attachment export', async () => {
+    const { nodeId, nodeSecret, accessToken } = await createNode();
+    const nodeWs = new WebSocket(`${wssUrl}/v1/node/connect`, {
+      headers: { authorization: `Node ${nodeId}.${nodeSecret}` },
+    });
+    await waitWs(nodeWs, 'open');
+    nodeWs.send(JSON.stringify({
+      v: 1,
+      kind: 'node.hello',
+      protocolMin: 1,
+      protocolMax: 1,
+      node: { id: nodeId, name: 'Content Node', platform: 'darwin', arch: 'arm64', pluginVersion: '0.3.0', dshVersion: 'test' },
+      capabilities: [
+        'session.followup', 'session.prompt.parts', 'session.attachment.export',
+        'workspace.references', 'workspace.upload',
+      ],
+    }));
+    await waitFrame(nodeWs, 'node.hello.ack');
+
+    let followupPayload: any;
+    let followupCommands = 0;
+    nodeWs.on('message', (raw) => {
+      const command = JSON.parse(raw.toString());
+      if (command.kind !== 'command') return;
+      nodeWs.send(JSON.stringify({
+        v: 1, kind: 'command.ack', commandId: command.commandId, requestId: command.requestId, status: 'acked',
+      }));
+      if (command.action === 'workspace.references') {
+        nodeWs.send(JSON.stringify({
+          v: 1, kind: 'command.result', commandId: command.commandId, requestId: command.requestId, ok: true,
+          result: { references: [{ path: 'src/main.ts', kind: 'file', name: 'main.ts' }] },
+        }));
+      }
+      if (command.action === 'session.followup') {
+        followupCommands += 1;
+        followupPayload = command.payload;
+        nodeWs.send(JSON.stringify({
+          v: 1, kind: 'command.result', commandId: command.commandId, requestId: command.requestId, ok: true,
+          result: { accepted: true },
+        }));
+      }
+      if (command.action === 'session.attachment.export') {
+        const exportToken = '018f47e2-7c42-7abc-8def-abcdefabcdef';
+        const bytes = Buffer.from('authorized-image-bytes');
+        mkdirSync(spoolDir, { recursive: true });
+        writeFileSync(join(spoolDir, `${exportToken}.attachment`), bytes, { mode: 0o600 });
+        nodeWs.send(JSON.stringify({
+          v: 1, kind: 'command.result', commandId: command.commandId, requestId: command.requestId, ok: true,
+          result: {
+            exportToken,
+            attachment: { attachmentId: 'sha256:opaque', mediaType: 'image/png', bytes: bytes.length, width: 2, height: 2 },
+          },
+        }));
+      }
+    });
+
+    const references = await getJson(`${baseUrl}/v1/nodes/${nodeId}/sessions/session-rich/workspace-references?q=main`, {
+      authorization: `Bearer ${accessToken}`,
+    });
+    expect(references.references).toEqual([{ path: 'src/main.ts', kind: 'file', name: 'main.ts' }]);
+
+    const privateBytes = Buffer.from('private-upload-bytes-not-for-sqlite');
+    const created = await postJson(`${baseUrl}/v1/nodes/${nodeId}/sessions/session-rich/uploads`, {
+      kind: 'file', displayName: 'report.txt', mediaType: 'text/plain', byteSize: privateBytes.length,
+    }, { authorization: `Bearer ${accessToken}` });
+    const first = privateBytes.subarray(0, 11);
+    for (const [offset, bytes] of [[0, first], [first.length, privateBytes.subarray(first.length)]] as const) {
+      const response = await fetch(`${baseUrl}/v1/nodes/${nodeId}/sessions/session-rich/uploads/${created.upload.id}?offset=${offset}`, {
+        method: 'PUT',
+        headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/octet-stream' },
+        body: bytes,
+      });
+      expect(response.status).toBe(200);
+    }
+
+    const followupRequestId = uuidv7();
+    const followupBody = {
+      requestId: followupRequestId,
+      content: 'Read this',
+      references: [{ path: 'src/main.ts', kind: 'file' }],
+      uploads: [{ uploadId: created.upload.id }],
+    };
+    const sent = await postJson(`${baseUrl}/v1/nodes/${nodeId}/sessions/session-rich/followup`, followupBody, { authorization: `Bearer ${accessToken}` });
+    expect(sent.accepted).toBe(true);
+    expect(followupPayload).toMatchObject({
+      content: 'Read this',
+      references: [{ path: 'src/main.ts', kind: 'file' }],
+      uploads: [{ uploadId: created.upload.id, displayName: 'report.txt', byteSize: privateBytes.length }],
+    });
+    expect(existsSync(join(spoolDir, `${created.upload.id}.part`))).toBe(false);
+
+    const retry = await postJson(`${baseUrl}/v1/nodes/${nodeId}/sessions/session-rich/followup`, followupBody, { authorization: `Bearer ${accessToken}` });
+    expect(retry).toMatchObject({ accepted: true, duplicates: true, requestId: followupRequestId });
+    expect(followupCommands).toBe(1);
+
+    const reuse = await fetch(`${baseUrl}/v1/nodes/${nodeId}/sessions/session-rich/followup`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ ...followupBody, requestId: uuidv7() }),
+    });
+    expect(reuse.status).toBe(409);
+
+    const attachment = await fetch(`${baseUrl}/v1/nodes/${nodeId}/sessions/session-rich/attachments/${encodeURIComponent('sha256:opaque')}`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    if (!attachment.ok) throw new Error(`attachment ${attachment.status}: ${await attachment.text()}`);
+    expect(attachment.status).toBe(200);
+    expect(attachment.headers.get('content-type')).toContain('image/png');
+    expect(Buffer.from(await attachment.arrayBuffer()).toString()).toBe('authorized-image-bytes');
+
+    const databaseBytes = readFileSync(dbPath);
+    expect(databaseBytes.includes(privateBytes)).toBe(false);
+    nodeWs.close();
   });
 
   it('rejects invalid requestId format', async () => {

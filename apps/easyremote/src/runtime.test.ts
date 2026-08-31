@@ -31,6 +31,7 @@ describe('local runtime configuration', () => {
       HOST: '127.0.0.1',
       PORT: '9191',
       DATABASE_PATH: '/state/data/hub.sqlite',
+      SPOOL_DIR: '/state/spool',
       HUB_ENTRY_FILE: '/state/public-origin.json',
       NODE_ENV: 'production',
     });
@@ -70,6 +71,7 @@ describe('local runtime configuration', () => {
       hubUrl: 'http://127.0.0.1:8787',
       publicOrigin: 'https://dsh.example.com',
       nodeName: 'Studio Mac',
+      spoolDir: paths.spoolDir,
     });
     expect(JSON.parse(readFileSync(paths.publicEntry, 'utf8'))).toEqual({ publicOrigin: 'https://dsh.example.com' });
     const yaml = readFileSync(paths.namedConfig, 'utf8');

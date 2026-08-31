@@ -2,7 +2,7 @@
   "expo": {
     "name": "DSH EasyRemote",
     "slug": "dsh-easyremote",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "orientation": "portrait",
     "scheme": "dshremote",
     "icon": "./assets/icon.png",
@@ -42,6 +42,14 @@
         {
           "cameraPermission": "Allow DSH EasyRemote to scan your DSH pairing QR code.",
           "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow DSH EasyRemote to attach images to your Harness conversation.",
+          "cameraPermission": "Allow DSH EasyRemote to take an image for your Harness conversation.",
+          "microphonePermission": false
         }
       ],
       "expo-secure-store",

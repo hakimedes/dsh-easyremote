@@ -28,7 +28,9 @@ DSH EasyRemote lets you securely use DeepSeek Harness running on your own comput
 
 ## Project status
 
-The project is currently in public preview. The public npm package `0.2.1` and long-term-signed Community APK `0.2.0` are available now. Launch setup with `npx` or download Android assets from [GitHub Releases](https://github.com/hakimedes/dsh-easyremote/releases). Additional physical-device and cross-platform regression testing will continue.
+The project is currently in public preview. The public npm package and long-term-signed Community APK are released under the same `0.3.0` version. Launch setup with `npx` or download Android assets from [GitHub Releases](https://github.com/hakimedes/dsh-easyremote/releases). Additional physical-device and cross-platform regression testing will continue.
+
+Version `0.3.0` adds Mobile files and rich content: take or choose images, upload files, search workspace paths with `@`, and safely render Markdown, tables, forms, basic charts, and guarded `dsh-ui` visualizations in the conversation. Ordinary files are written only under the current workspace's `.dsh-easyremote/uploads/`; images use DSH durable attachments, while the Hub stores neither file bytes nor full chat transcripts.
 
 ## Quick start without a domain
 

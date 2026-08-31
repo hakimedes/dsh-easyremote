@@ -1,4 +1,4 @@
-import type { SessionEvent, SessionMessage, SessionSummary, SessionView } from '../domain/types';
+import type { MessageBlock, SessionEvent, SessionMessage, SessionSummary, SessionView } from '../domain/types';
 
 function textFrom(data: Record<string, unknown>) {
   for (const key of ['text', 'content', 'message', 'summary']) {
@@ -11,10 +11,36 @@ function messageId(event: SessionEvent) {
   return `${event.nodeId}:${event.sessionId}:${event.sourceSeq}`;
 }
 
+function blocksFrom(data: Record<string, unknown>): MessageBlock[] | undefined {
+  if (!Array.isArray(data.blocks)) return undefined;
+  const blocks = data.blocks.flatMap((value): MessageBlock[] => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    const block = value as Record<string, unknown>;
+    if (block.type === 'text' && typeof block.text === 'string') return [{ type: 'text', text: block.text }];
+    if (
+      block.type === 'image'
+      && typeof block.attachmentId === 'string'
+      && typeof block.mediaType === 'string'
+      && typeof block.bytes === 'number'
+      && typeof block.width === 'number'
+      && typeof block.height === 'number'
+    ) return [{
+      type: 'image', attachmentId: block.attachmentId, mediaType: block.mediaType,
+      bytes: block.bytes, width: block.width, height: block.height,
+      ...(typeof block.name === 'string' ? { name: block.name } : {}),
+    }];
+    if (block.type === 'workspace-reference' && typeof block.path === 'string') {
+      return [{ type: 'workspace-reference', path: block.path, kind: block.kind === 'dir' ? 'dir' : 'file' }];
+    }
+    return [];
+  });
+  return blocks.length ? blocks : undefined;
+}
+
 export function eventToMessage(event: SessionEvent): SessionMessage | null {
   const text = textFrom(event.event.data);
   const timestamp = event.createdAt || Date.now();
-  if (event.event.type === 'user.message') return { id: messageId(event), role: 'user', text, timestamp, sourceSeq: event.sourceSeq };
+  if (event.event.type === 'user.message') return { id: messageId(event), role: 'user', text, timestamp, sourceSeq: event.sourceSeq, ...(blocksFrom(event.event.data) ? { blocks: blocksFrom(event.event.data) } : {}) };
   if (event.event.type === 'assistant.delta' || event.event.type === 'assistant.message') {
     return {
       id: messageId(event),
@@ -23,6 +49,7 @@ export function eventToMessage(event: SessionEvent): SessionMessage | null {
       timestamp,
       sourceSeq: event.sourceSeq,
       streaming: event.event.type === 'assistant.delta',
+      ...(blocksFrom(event.event.data) ? { blocks: blocksFrom(event.event.data) } : {}),
     };
   }
   if (event.event.type === 'tool.call' || event.event.type === 'tool.result') {
@@ -70,6 +97,7 @@ export function reduceSessionEvents(view: SessionView, events: SessionEvent[]): 
           timestamp: message.timestamp,
           sourceSeq: message.sourceSeq,
           streaming: false,
+          ...(message.blocks ? { blocks: message.blocks } : {}),
         };
         continue;
       }

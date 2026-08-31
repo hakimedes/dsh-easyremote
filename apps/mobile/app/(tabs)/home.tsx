@@ -13,6 +13,10 @@ import { HistoryDrawer } from '@/ui/history-drawer';
 import { useI18n } from '@/ui/i18n';
 import { useAppStore } from '@/state/app-store';
 import { radii, spacing, type, useTheme } from '@/ui/theme';
+import type { SendFollowupOptions } from '@/state/app-store';
+import { collectSessionPanel } from '@/genui/panel';
+import { SessionPanelCard } from '@/genui/rich-message';
+import { apiClient } from '@/api/client';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -117,6 +121,7 @@ export default function HomeScreen() {
   const view = selectedKey ? sessionViews[selectedKey] : undefined;
   const models = selectedKey ? sessionModels[selectedKey] : undefined;
   const messages = useMemo(() => lastConversationTurn(view?.messages || []), [view?.messages]);
+  const panel = useMemo(() => selected ? collectSessionPanel(view?.messages || [], apiClient.hubId || apiClient.server, selected.session.sessionId) : null, [selected, view?.messages]);
   const anyOnline = onlineNodes.length > 0;
   const connectionTone = !cloudAvailable ? 'warning' : anyOnline ? 'online' : 'offline';
   const connectionLabel = !cloudAvailable ? t('cloudUnavailable') : anyOnline ? t('online') : t('pcOffline');
@@ -180,10 +185,10 @@ export default function HomeScreen() {
     }
   }
 
-  async function send(content: string) {
+  async function send(content: string, options?: SendFollowupOptions) {
     if (!selected) return;
     if (steering) await sendSteer(selected.node.id, selected.session.sessionId, content);
-    else await sendFollowup(selected.node.id, selected.session.sessionId, content);
+    else await sendFollowup(selected.node.id, selected.session.sessionId, content, options);
   }
 
   async function stop() {
@@ -263,12 +268,13 @@ export default function HomeScreen() {
 
         {offline && <View style={[styles.offlineRow, { backgroundColor: `${theme.colors.coral}0D` }]}><Ionicons name="cloud-offline-outline" size={16} color={theme.colors.coral} /><Text style={[styles.offlineText, { color: theme.colors.coral }]}>{t('offlineSnapshot')}</Text></View>}
         <ScrollView style={styles.turnScroll} contentContainerStyle={[styles.turnContent, messages.length === 0 && styles.emptyTurn]} showsVerticalScrollIndicator={false}>
-          {messages.length ? messages.map((message) => <MessageRow key={message.id} message={message} />) : <View style={styles.emptyConversation}>
+          {messages.length ? messages.map((message) => <MessageRow key={message.id} message={message} nodeId={selected.node.id} sessionId={selected.session.sessionId} interactive={false} compact />) : <View style={styles.emptyConversation}>
             <WhaleMark size={70} framed={false} />
             <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>{t('readyTitle')}</Text>
             <Text style={[styles.emptyBody, { color: theme.colors.muted }]}>{t('readyBody')}</Text>
           </View>}
         </ScrollView>
+        {panel && <SessionPanelCard panel={panel} interactive={false} />}
         <Composer
           key={selectedKey}
           disabled={offline}
@@ -279,6 +285,9 @@ export default function HomeScreen() {
           onSend={send}
           onStop={stop}
           placeholder={t('messagePlaceholder')}
+          nodeId={selected.node.id}
+          sessionId={selected.session.sessionId}
+          capabilities={selected.node.capabilities || []}
           toolbar={<>
             <ModelChip models={models} disabled={offline} onPress={() => setModelSheet(true)} />
             <Pressable disabled={offline} onPress={() => setModelSheet(true)} style={({ pressed }) => [styles.reasoningChip, { borderColor: theme.colors.line, opacity: offline ? 0.45 : pressed ? 0.65 : 1 }]} accessibilityRole="button" accessibilityLabel={`${t('reasoning')} ${reasoningLabel}`}>

@@ -58,6 +58,27 @@ export function writeAppPreference(key: string, value: string) {
   );
 }
 
+export function readGenuiFormState(key: string): Record<string, string | boolean | number> {
+  const value = readAppPreference(`genui-form:${key}`);
+  if (!value) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const result: Record<string, string | boolean | number> = {};
+    for (const [field, item] of Object.entries(parsed as Record<string, unknown>).slice(0, 100)) {
+      if (typeof item === 'string') result[field.slice(0, 200)] = item.slice(0, 2_000);
+      else if (typeof item === 'boolean' || typeof item === 'number' && Number.isFinite(item)) result[field.slice(0, 200)] = item;
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+export function writeGenuiFormState(key: string, value: Record<string, string | boolean | number>) {
+  writeAppPreference(`genui-form:${key}`, JSON.stringify(value));
+}
+
 export function cacheUser(user: User) {
   db().runSync(
     'INSERT OR REPLACE INTO user_cache (id, display_name, org_id, updated_at) VALUES (?, ?, ?, ?)',

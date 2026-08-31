@@ -11,6 +11,8 @@ import type {
   SessionSummary,
   SnapshotResponse,
   User,
+  RemoteUpload,
+  WorkspaceReference,
 } from '../domain/types';
 import { ApiError } from '../domain/types';
 import { clearHubBinding, writeHubBinding } from '../storage/secure';
@@ -45,6 +47,10 @@ export class ApiClient {
 
   get hubId() {
     return this.state.hubId;
+  }
+
+  authorizationHeaders(): Record<string, string> {
+    return this.state.accessToken ? { authorization: `Bearer ${this.state.accessToken}` } : {};
   }
 
   setServer(server: string) {
@@ -198,11 +204,53 @@ export class ApiClient {
     });
   }
 
-  followup(nodeId: string, sessionId: string, content: string, requestId = uuidv7()) {
+  workspaceReferences(nodeId: string, sessionId: string, query: string) {
+    return this.request<{ references: WorkspaceReference[] }>(`/v1/nodes/${encodeURIComponent(nodeId)}/sessions/${encodeURIComponent(sessionId)}/workspace-references?q=${encodeURIComponent(query)}`)
+      .then((response) => response.references);
+  }
+
+  createUpload(nodeId: string, sessionId: string, input: {
+    kind: 'image' | 'file'; displayName: string; mediaType: string; byteSize: number;
+  }) {
+    return this.request<{ upload: RemoteUpload }>(`/v1/nodes/${encodeURIComponent(nodeId)}/sessions/${encodeURIComponent(sessionId)}/uploads`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }).then((response) => response.upload);
+  }
+
+  async uploadChunk(nodeId: string, sessionId: string, uploadId: string, offset: number, bytes: Uint8Array) {
+    const path = `/v1/nodes/${encodeURIComponent(nodeId)}/sessions/${encodeURIComponent(sessionId)}/uploads/${encodeURIComponent(uploadId)}?offset=${offset}`;
+    return this.binaryRequest<{ upload: RemoteUpload }>(path, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: bytes as unknown as BodyInit,
+    }).then((response) => response.upload);
+  }
+
+  deleteUpload(nodeId: string, sessionId: string, uploadId: string) {
+    return this.request<void>(`/v1/nodes/${encodeURIComponent(nodeId)}/sessions/${encodeURIComponent(sessionId)}/uploads/${encodeURIComponent(uploadId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  followup(nodeId: string, sessionId: string, content: string, options: {
+    references?: WorkspaceReference[];
+    uploadIds?: string[];
+    requestId?: string;
+  } = {}) {
     return this.request(`/v1/nodes/${encodeURIComponent(nodeId)}/sessions/${encodeURIComponent(sessionId)}/followup`, {
       method: 'POST',
-      body: JSON.stringify({ requestId, content }),
+      body: JSON.stringify({
+        requestId: options.requestId || uuidv7(),
+        content,
+        ...(options.references?.length ? { references: options.references.map(({ path, kind }) => ({ path, kind })) } : {}),
+        ...(options.uploadIds?.length ? { uploads: options.uploadIds.map((uploadId) => ({ uploadId })) } : {}),
+      }),
     });
+  }
+
+  attachmentUrl(nodeId: string, sessionId: string, attachmentId: string) {
+    return apiUrl(`/v1/nodes/${encodeURIComponent(nodeId)}/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`, this.state.server);
   }
 
   steer(nodeId: string, sessionId: string, instruction: string, requestId = uuidv7()) {
@@ -232,9 +280,29 @@ export class ApiClient {
 
   private async rawRequest<T>(path: string, init: RequestOptions, authorized = true): Promise<T> {
     const headers = new Headers(init.headers);
-    headers.set('content-type', 'application/json');
+    if (typeof init.body === 'string' && !headers.has('content-type')) headers.set('content-type', 'application/json');
     if (authorized && this.state.accessToken) headers.set('authorization', `Bearer ${this.state.accessToken}`);
     const response = await fetch(apiUrl(path, this.state.server), { ...init, headers });
+    const contentType = response.headers.get('content-type') || '';
+    const body = contentType.includes('application/json') ? await response.json() : await response.text();
+    if (!response.ok) {
+      const payload = typeof body === 'object' && body ? body as ApiErrorPayload : { message: String(body) };
+      throw new ApiError(response.status, payload);
+    }
+    return body as T;
+  }
+
+  private async binaryRequest<T>(path: string, init: RequestOptions): Promise<T> {
+    const run = async () => {
+      const headers = new Headers(init.headers);
+      if (this.state.accessToken) headers.set('authorization', `Bearer ${this.state.accessToken}`);
+      return fetch(apiUrl(path, this.state.server), { ...init, headers });
+    };
+    let response = await run();
+    if (response.status === 401 && init.retryOnUnauthorized !== false) {
+      const nextAccessToken = await this.refresh();
+      if (nextAccessToken) response = await run();
+    }
     const contentType = response.headers.get('content-type') || '';
     const body = contentType.includes('application/json') ? await response.json() : await response.text();
     if (!response.ok) {

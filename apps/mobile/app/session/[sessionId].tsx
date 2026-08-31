@@ -8,6 +8,11 @@ import { ModelChip, ModelPickerSheet, SessionRenameSheet } from '@/ui/session-co
 import { useAppStore } from '@/state/app-store';
 import { spacing, type, useTheme } from '@/ui/theme';
 import type { SessionMessage } from '@/domain/types';
+import type { SendFollowupOptions } from '@/state/app-store';
+import { collectSessionPanel } from '@/genui/panel';
+import { SessionPanelCard } from '@/genui/rich-message';
+import type { GenuiAction } from '@/genui/renderer';
+import { apiClient } from '@/api/client';
 
 export default function SessionDetailScreen() {
   const theme = useTheme();
@@ -41,6 +46,7 @@ export default function SessionDetailScreen() {
   const node = nodes.find((item) => item.id === nodeId);
   const offline = Boolean(view?.isOfflineSnapshot || node && !node.online);
   const messages = useMemo(() => view?.messages || [], [view?.messages]);
+  const panel = useMemo(() => collectSessionPanel(messages, apiClient.hubId || apiClient.server, sessionId || ''), [messages, sessionId]);
   const lastOutputVersion = messages.length
     ? `${messages[messages.length - 1]?.sourceSeq}:${messages[messages.length - 1]?.text.length}`
     : '';
@@ -62,16 +68,21 @@ export default function SessionDetailScreen() {
     }
   }, [lastOutputVersion, messages.length, nearBottom]);
 
-  async function send(content: string) {
+  async function send(content: string, options?: SendFollowupOptions) {
     if (!sessionId) return;
     if (steering) await sendSteer(nodeId, sessionId, content);
-    else await sendFollowup(nodeId, sessionId, content);
+    else await sendFollowup(nodeId, sessionId, content, options);
   }
 
   async function stop() {
     setStopping(true);
     if (!sessionId) return;
     try { await stopSession(nodeId, sessionId); } finally { setStopping(false); }
+  }
+
+  async function sendGenuiAction(event: GenuiAction) {
+    if (!sessionId || offline) return;
+    await sendFollowup(nodeId, sessionId, `[genui-action] ${JSON.stringify({ action: event.action, payload: event.payload })}`);
   }
 
   return <KeyboardAvoidingView style={[styles.root, { backgroundColor: theme.colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={8}>
@@ -81,10 +92,11 @@ export default function SessionDetailScreen() {
       {errorMessage && <ErrorBanner message={errorMessage} onDismiss={clearError} />}
       {view?.isOfflineSnapshot && <View style={[styles.offlineRow, { backgroundColor: `${theme.colors.coral}0D` }]}><Ionicons name="cloud-offline-outline" size={16} color={theme.colors.coral} /><Text style={[styles.offlineText, { color: theme.colors.coral }]}>Offline snapshot · read-only</Text></View>}
       <View style={styles.transcriptWrap}>
-        <FlatList ref={listRef} data={messages} keyExtractor={(item) => item.id} renderItem={({ item }) => <MessageRow message={item} />} contentContainerStyle={[styles.transcript, messages.length === 0 && styles.emptyTranscript]} onScroll={({ nativeEvent }) => { const distance = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y; setNearBottom(distance < 80); }} scrollEventThrottle={100} showsVerticalScrollIndicator={false} ListEmptyComponent={<View style={styles.empty}><WhaleMark size={76} /><Text style={[styles.emptyTitle, { color: theme.colors.text }]}>Your Harness is listening.</Text><Text style={[styles.emptyBody, { color: theme.colors.muted }]}>Send a follow-up here and the same local session will continue on your computer.</Text></View>} />
+        <FlatList ref={listRef} data={messages} keyExtractor={(item) => item.id} renderItem={({ item }) => <MessageRow message={item} nodeId={nodeId} sessionId={sessionId} interactive={!offline} onAction={sendGenuiAction} />} contentContainerStyle={[styles.transcript, messages.length === 0 && styles.emptyTranscript]} onScroll={({ nativeEvent }) => { const distance = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y; setNearBottom(distance < 80); }} scrollEventThrottle={100} showsVerticalScrollIndicator={false} ListEmptyComponent={<View style={styles.empty}><WhaleMark size={76} /><Text style={[styles.emptyTitle, { color: theme.colors.text }]}>Your Harness is listening.</Text><Text style={[styles.emptyBody, { color: theme.colors.muted }]}>Send a follow-up here and the same local session will continue on your computer.</Text></View>} />
         {newOutput && <Pressable onPress={() => { listRef.current?.scrollToEnd({ animated: true }); setNearBottom(true); setNewOutput(false); }} style={[styles.newOutput, { backgroundColor: theme.colors.accent }]}><Ionicons name="arrow-down" size={15} color={theme.colors.accentInk} /><Text style={[styles.newOutputText, { color: theme.colors.accentInk }]}>New output</Text></Pressable>}
       </View>
-      <Composer disabled={offline} running={Boolean(view?.isRunning) && !stopping} steering={steering} onToggleSteering={() => setSteering((value) => !value)} onSend={send} onStop={stop} />
+      {panel && <SessionPanelCard panel={panel} interactive={!offline} onAction={sendGenuiAction} />}
+      <Composer disabled={offline} running={Boolean(view?.isRunning) && !stopping} steering={steering} onToggleSteering={() => setSteering((value) => !value)} onSend={send} onStop={stop} nodeId={nodeId} sessionId={sessionId} capabilities={node?.capabilities || []} />
     </Screen>
     <ModelPickerSheet visible={modelSheet} nodeId={nodeId} sessionId={sessionId} running={Boolean(view?.isRunning)} offline={offline} onClose={() => setModelSheet(false)} />
     <SessionRenameSheet visible={renameSheet} nodeId={nodeId} sessionId={sessionId} currentTitle={view?.session.title || 'Session'} offline={offline} onClose={() => setRenameSheet(false)} />

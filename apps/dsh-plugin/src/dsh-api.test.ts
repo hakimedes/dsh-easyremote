@@ -95,6 +95,46 @@ describe('DshApiBridge', () => {
     expect(renamePayload).toEqual({ sessionId: 'session-1', title: '  探索未至之境  ' });
   });
 
+  it('submits native image prompt parts with the Mobile request identity', async () => {
+    let request: any;
+    const bridge = new DshApiBridge({
+      sessions: {
+        prompt: async (value: unknown) => {
+          request = value;
+          return ok({ accepted: true });
+        },
+      },
+    }, () => 'unused-rpc');
+    await expect(bridge.prompt({
+      requestId: 'mobile-request',
+      sessionId: 'session-1',
+      content: [
+        { type: 'text', text: 'Describe' },
+        { type: 'image', mediaType: 'image/png', data: 'aGVsbG8=', name: 'whale.png' },
+      ],
+    })).resolves.toEqual({ accepted: true });
+    expect(request).toEqual({
+      rpcId: 'mobile-request',
+      payload: {
+        requestId: 'mobile-request',
+        sessionId: 'session-1',
+        mode: 'queue',
+        content: [
+          { type: 'text', text: 'Describe' },
+          { type: 'image', mediaType: 'image/png', data: 'aGVsbG8=', name: 'whale.png' },
+        ],
+      },
+    });
+  });
+
+  it('exports a session-authorized native attachment', async () => {
+    const attachment = { attachmentId: 'sha256:abc', mediaType: 'image/png', bytes: 5, width: 1, height: 1 };
+    const bridge = new DshApiBridge({
+      sessions: { attachment: async () => ok({ attachment, data: 'aGVsbG8=' }) },
+    }, () => 'rpc-attachment');
+    await expect(bridge.attachment('session-1', 'sha256:abc')).resolves.toEqual({ attachment, data: 'aGVsbG8=' });
+  });
+
   it('preserves host error identity for the Remote protocol', async () => {
     const bridge = new DshApiBridge({
       sessions: {

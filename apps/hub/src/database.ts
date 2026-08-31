@@ -193,6 +193,35 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 5,
+    name: 'ephemeral-upload-metadata',
+    up(database) {
+      database.exec(`
+        CREATE TABLE IF NOT EXISTS uploads (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          node_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          media_type TEXT NOT NULL,
+          byte_size INTEGER NOT NULL,
+          received_bytes INTEGER NOT NULL DEFAULT 0,
+          sha256 TEXT,
+          status TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL,
+          consumed_at INTEGER,
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          FOREIGN KEY (node_id) REFERENCES nodes(id)
+        );
+        CREATE INDEX IF NOT EXISTS uploads_owner_idx
+          ON uploads(user_id, node_id, session_id, status);
+        CREATE INDEX IF NOT EXISTS uploads_expiry_idx ON uploads(expires_at);
+      `);
+    },
+  },
 ];
 
 function assertSupportedNodeVersion() {

@@ -38,6 +38,41 @@ function textFromBlocks(value: unknown): string {
   return text.join('\n').trim();
 }
 
+function publicBlocks(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  const blocks: Array<Record<string, unknown>> = [];
+  for (const item of value) {
+    const block = record(item);
+    if (!block) continue;
+    if (block.type === 'text' && typeof block.text === 'string' && block.text) {
+      blocks.push({ type: 'text', text: block.text });
+      continue;
+    }
+    if (block.type === 'image') {
+      const attachment = record(block.attachment);
+      if (
+        attachment
+        && typeof attachment.attachmentId === 'string'
+        && typeof attachment.mediaType === 'string'
+        && typeof attachment.bytes === 'number'
+        && typeof attachment.width === 'number'
+        && typeof attachment.height === 'number'
+      ) {
+        blocks.push({
+          type: 'image',
+          attachmentId: attachment.attachmentId,
+          mediaType: attachment.mediaType,
+          bytes: attachment.bytes,
+          width: attachment.width,
+          height: attachment.height,
+          ...(typeof attachment.name === 'string' ? { name: attachment.name } : {}),
+        });
+      }
+    }
+  }
+  return blocks;
+}
+
 export function normalizeDshEvent(
   source: DshEvent,
   toolNames: Map<string, string> = new Map(),
@@ -59,7 +94,8 @@ export function normalizeDshEvent(
       return envelope('step.end', {});
     case 'user/message': {
       const text = textFromBlocks(source.data.content);
-      return text ? envelope('user.message', { text }) : null;
+      const blocks = publicBlocks(source.data.content);
+      return text || blocks.length ? envelope('user.message', { text, ...(blocks.length ? { blocks } : {}) }) : null;
     }
     case 'assistant/chunk': {
       const chunk = record(source.data.chunk);
@@ -70,7 +106,8 @@ export function normalizeDshEvent(
     case 'assistant/message': {
       const message = record(source.data.message);
       const text = textFromBlocks(message?.content);
-      return text ? envelope('assistant.message', { text }) : null;
+      const blocks = publicBlocks(message?.content);
+      return text || blocks.length ? envelope('assistant.message', { text, ...(blocks.length ? { blocks } : {}) }) : null;
     }
     case 'session/title': {
       const title = typeof source.data.title === 'string' ? source.data.title.trim() : '';
@@ -83,7 +120,11 @@ export function normalizeDshEvent(
       return envelope('tool.call', {
         toolCallId,
         name,
-        input: typeof source.data.arguments === 'string' ? source.data.arguments : '',
+        input: typeof source.data.arguments === 'string'
+          ? source.data.arguments
+          : source.data.arguments === undefined
+            ? ''
+            : JSON.stringify(source.data.arguments),
       });
     }
     case 'tool/result': {

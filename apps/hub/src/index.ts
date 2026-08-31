@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { readFileSync, mkdirSync } from 'node:fs';
+import { createReadStream, readFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
@@ -9,12 +9,13 @@ import { v7 as uuidv7 } from 'uuid';
 import type { RawData, WebSocket } from 'ws';
 
 import { getOrCreateHubId, openDatabase } from './database.js';
+import { UploadSpool, UploadSpoolError, UPLOAD_CHUNK_BYTES } from './upload-spool.js';
 
 const PORT = Number(process.env.PORT ?? '8787');
 const HOST = process.env.HOST ?? '127.0.0.1';
 const HUB_ENTRY = process.env.HUB_ENTRY ?? 'https://dsh.infomind.cc';
 const HUB_ENTRY_FILE = process.env.HUB_ENTRY_FILE;
-const HUB_VERSION = process.env.DSH_EASYREMOTE_VERSION ?? '0.2.0';
+const HUB_VERSION = process.env.DSH_EASYREMOTE_VERSION ?? '0.3.0';
 const ACCESS_TTL_SECONDS = 15 * 60;
 const REFRESH_TTL_MS = 60 * 24 * 60 * 60 * 1000;
 const COMMAND_TTL_MS = 30_000;
@@ -26,6 +27,7 @@ const SESSION_EVENT_MAX = 2000;
 const SESSION_EVENT_TTL_MS = 10 * 60 * 1000;
 const COMMAND_RETENTION_MS = Number(process.env.COMMAND_RETENTION_MS ?? 7 * 24 * 60 * 60 * 1000);
 const DB_PATH = process.env.DATABASE_PATH || './data/hub.sqlite';
+const SPOOL_DIR = process.env.SPOOL_DIR || resolve(dirname(DB_PATH), 'spool');
 const jwtSecretValue = process.env.JWT_SECRET || 'replace-me-secret-change-before-prod';
 if (process.env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || jwtSecretValue.length < 32)) {
   throw new Error('JWT_SECRET must be explicitly set to at least 32 characters in production');
@@ -36,6 +38,7 @@ const dbFile = resolve(DB_PATH);
 mkdirSync(dirname(dbFile), { recursive: true });
 const sqlite = openDatabase(dbFile);
 const HUB_ID = getOrCreateHubId(sqlite);
+const uploadSpool = new UploadSpool(sqlite, SPOOL_DIR);
 
 function nowMs() {
   return Date.now();
@@ -297,6 +300,10 @@ function minimalPersistedCommandResult(action: string, frame: CommandResultFrame
     };
   }
 
+  if (action === 'session.followup') {
+    return { ...base, result: { accepted: result?.accepted !== false } };
+  }
+
   return null;
 }
 
@@ -310,6 +317,7 @@ type PendingCommandResult = {
 const pendingCommandTimeout = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingCommandResults = new Map<string, PendingCommandResult>();
 const rateBuckets = new Map<string, { count: number; windowStart: number }>();
+const uploadRateBuckets = new Map<string, { count: number; bytes: number; windowStart: number }>();
 
 function keySession(nodeId: string, sessionId: string) {
   return `${nodeId}:${sessionId}`;
@@ -432,6 +440,7 @@ function nodeIsOnline(nodeId: string) {
 }
 
 function publicNode(row: any) {
+  const connection = nodeConnections.get(row.id);
   return {
     id: row.id,
     name: row.name,
@@ -443,6 +452,7 @@ function publicNode(row: any) {
     lastSeenAt: row.last_seen_at,
     revokedAt: row.revoked_at,
     online: nodeIsOnline(row.id),
+    capabilities: connection ? [...connection.capabilities].sort() : [],
   };
 }
 
@@ -573,6 +583,9 @@ function cleanupStaleRates() {
       rateBuckets.delete(key);
     }
   }
+  for (const [key, value] of uploadRateBuckets.entries()) {
+    if (now - value.windowStart > 60_000) uploadRateBuckets.delete(key);
+  }
 }
 
 function cleanupCommandMetadata() {
@@ -586,6 +599,30 @@ function getAuthUserFromRequest(authHeader: string | undefined): Promise<AuthCon
   const token = parseBearer(authHeader);
   if (!token) return Promise.resolve(null);
   return verifyAccessToken(token);
+}
+
+function checkUploadRate(userId: string, bytes: number) {
+  const now = nowMs();
+  const bucket = uploadRateBuckets.get(userId) ?? { count: 0, bytes: 0, windowStart: now };
+  if (now - bucket.windowStart > 60_000) {
+    bucket.count = 0;
+    bucket.bytes = 0;
+    bucket.windowStart = now;
+  }
+  bucket.count += 1;
+  bucket.bytes += bytes;
+  uploadRateBuckets.set(userId, bucket);
+  if (bucket.count > 180 || bucket.bytes > 160 * 1024 * 1024) {
+    throw new UploadSpoolError('RATE_LIMITED', 'Upload rate limit exceeded');
+  }
+}
+
+function requireOwnedNode(userId: string, nodeId: string) {
+  const node = ensureNodeMeta(nodeId);
+  if (!node) throw { code: 'NODE_NOT_FOUND', message: 'Node not found' };
+  if (node.owner_user_id !== userId) throw { code: 'FORBIDDEN', message: 'Node belongs to another user' };
+  if (node.revoked_at) throw { code: 'NODE_REVOKED', message: 'Node was revoked' };
+  return node;
 }
 
 function getUserByRefreshToken(refreshToken: string) {
@@ -648,6 +685,7 @@ await app.register(websocket, {
 });
 
 app.addHook('onRequest', async (request, reply) => {
+  if (request.method === 'PUT' && request.url.includes('/uploads/')) return;
   const key = request.ip || 'unknown';
   const now = nowMs();
   const bucket = rateBuckets.get(key) ?? { count: 0, windowStart: now };
@@ -661,6 +699,12 @@ app.addHook('onRequest', async (request, reply) => {
     return sendError(reply, 429, 'RATE_LIMITED', 'Too many requests');
   }
 });
+
+app.addContentTypeParser(
+  'application/octet-stream',
+  { parseAs: 'buffer', bodyLimit: UPLOAD_CHUNK_BYTES },
+  (_request, body, done) => done(null, body),
+);
 
 const httpError = {
   UNAUTHORIZED: 401,
@@ -687,6 +731,17 @@ const httpError = {
   COMMAND_EXPIRED: 408,
   PROTOCOL_UNSUPPORTED: 400,
   INTERNAL_ERROR: 500,
+  RATE_LIMITED: 429,
+  UPLOAD_NOT_FOUND: 404,
+  ATTACHMENT_NOT_FOUND: 404,
+  UPLOAD_EXPIRED: 410,
+  UPLOAD_OFFSET_MISMATCH: 409,
+  UPLOAD_COMPLETE: 409,
+  UPLOAD_INCOMPLETE: 409,
+  UPLOAD_INVALID: 409,
+  UPLOAD_TOO_LARGE: 413,
+  UPLOAD_LIMIT_EXCEEDED: 413,
+  UNSUPPORTED_MEDIA_TYPE: 415,
 };
 
 const pairingBody = z.object({
@@ -730,9 +785,31 @@ const renameSessionBody = z.object({
   }),
 });
 
+const workspaceReferencesQuery = z.object({
+  q: z.string().max(2048).default(''),
+});
+
+const createUploadBody = z.object({
+  kind: z.enum(['image', 'file']),
+  displayName: z.string().min(1).max(1024),
+  mediaType: z.string().min(1).max(256),
+  byteSize: z.number().int().positive(),
+});
+
+const uploadIdBody = z.object({
+  uploadId: z.string().uuid(),
+});
+
 const followupBody = z.object({
   requestId: requestIdSchema,
-  content: z.string().min(1).max(131_072),
+  content: z.string().max(131_072).default(''),
+  references: z.array(z.object({
+    path: z.string().min(1).max(4096),
+    kind: z.enum(['file', 'dir']),
+  })).max(50).optional(),
+  uploads: z.array(uploadIdBody).max(10).optional(),
+}).refine((value) => Boolean(value.content.trim() || value.references?.length || value.uploads?.length), {
+  message: 'Follow-up requires text, a reference, or an upload',
 });
 
 const steerBody = z.object({
@@ -1724,6 +1801,153 @@ app.patch('/v1/nodes/:nodeId/sessions/:sessionId', async (request, reply) => {
   }
 });
 
+app.get('/v1/nodes/:nodeId/sessions/:sessionId/workspace-references', async (request, reply) => {
+  const params = request.params as { nodeId: string; sessionId: string };
+  const query = workspaceReferencesQuery.parse(request.query);
+  const authUser = await getAuthUserFromRequest(request.headers.authorization);
+  if (!authUser) return sendError(reply, 401, 'UNAUTHORIZED', 'Missing access token');
+
+  try {
+    const dispatched = await dispatchCommand(
+      authUser,
+      params.nodeId,
+      params.sessionId,
+      'workspace.references',
+      uuidv7(),
+      { query: query.q },
+      true,
+    );
+    const frame = await dispatched.resultPromise;
+    if (!frame?.ok) throw frame?.error || { code: 'INTERNAL_ERROR', message: 'Workspace search failed' };
+    const result = objectValue(frame.result);
+    const references = Array.isArray(result?.references) ? result.references.flatMap((value) => {
+      const item = objectValue(value);
+      if (!item || typeof item.path !== 'string') return [];
+      return [{
+        path: item.path,
+        kind: item.kind === 'dir' ? 'dir' : 'file',
+        ...(typeof item.name === 'string' ? { name: item.name } : {}),
+      }];
+    }).slice(0, 100) : [];
+    reply.send({ references });
+  } catch (err: any) {
+    const statusCode = httpError[err?.code as keyof typeof httpError] ?? 500;
+    return sendError(reply, statusCode, err?.code || 'INTERNAL_ERROR', err?.message || 'Workspace search failed');
+  }
+});
+
+app.post('/v1/nodes/:nodeId/sessions/:sessionId/uploads', async (request, reply) => {
+  const params = request.params as { nodeId: string; sessionId: string };
+  const body = requireBody(request, createUploadBody);
+  const authUser = await getAuthUserFromRequest(request.headers.authorization);
+  if (!authUser) return sendError(reply, 401, 'UNAUTHORIZED', 'Missing access token');
+
+  try {
+    requireOwnedNode(authUser.userId, params.nodeId);
+    const connection = nodeConnections.get(params.nodeId);
+    const capability = body.kind === 'image' ? 'session.prompt.parts' : 'workspace.upload';
+    if (!connection?.capabilities.has(capability)) {
+      throw { code: 'CAPABILITY_UNAVAILABLE', message: `Connector does not support ${capability}` };
+    }
+    checkUploadRate(authUser.userId, 0);
+    const upload = uploadSpool.create({ userId: authUser.userId, ...params }, body);
+    reply.code(201).send({ upload });
+  } catch (err: any) {
+    const statusCode = httpError[err?.code as keyof typeof httpError] ?? 500;
+    return sendError(reply, statusCode, err?.code || 'INTERNAL_ERROR', err?.message || 'Could not create upload');
+  }
+});
+
+app.put('/v1/nodes/:nodeId/sessions/:sessionId/uploads/:uploadId', {
+  bodyLimit: UPLOAD_CHUNK_BYTES,
+}, async (request, reply) => {
+  const params = request.params as { nodeId: string; sessionId: string; uploadId: string };
+  const authUser = await getAuthUserFromRequest(request.headers.authorization);
+  if (!authUser) return sendError(reply, 401, 'UNAUTHORIZED', 'Missing access token');
+
+  try {
+    requireOwnedNode(authUser.userId, params.nodeId);
+    const offsetValue = (request.query as { offset?: unknown }).offset;
+    const offset = typeof offsetValue === 'string' && /^\d+$/.test(offsetValue) ? Number(offsetValue) : Number.NaN;
+    const bytes = Buffer.isBuffer(request.body) ? request.body : null;
+    if (!bytes) throw new UploadSpoolError('INVALID_REQUEST', 'Upload chunk must use application/octet-stream');
+    checkUploadRate(authUser.userId, bytes.length);
+    const upload = uploadSpool.append(params.uploadId, { userId: authUser.userId, ...params }, offset, bytes);
+    reply.send({ upload });
+  } catch (err: any) {
+    const statusCode = httpError[err?.code as keyof typeof httpError] ?? 500;
+    return sendError(reply, statusCode, err?.code || 'INTERNAL_ERROR', err?.message || 'Could not append upload');
+  }
+});
+
+app.get('/v1/nodes/:nodeId/sessions/:sessionId/uploads/:uploadId', async (request, reply) => {
+  const params = request.params as { nodeId: string; sessionId: string; uploadId: string };
+  const authUser = await getAuthUserFromRequest(request.headers.authorization);
+  if (!authUser) return sendError(reply, 401, 'UNAUTHORIZED', 'Missing access token');
+  try {
+    requireOwnedNode(authUser.userId, params.nodeId);
+    const upload = uploadSpool.getOwned(params.uploadId, { userId: authUser.userId, ...params });
+    reply.send({ upload });
+  } catch (err: any) {
+    const statusCode = httpError[err?.code as keyof typeof httpError] ?? 500;
+    return sendError(reply, statusCode, err?.code || 'INTERNAL_ERROR', err?.message || 'Could not read upload');
+  }
+});
+
+app.delete('/v1/nodes/:nodeId/sessions/:sessionId/uploads/:uploadId', async (request, reply) => {
+  const params = request.params as { nodeId: string; sessionId: string; uploadId: string };
+  const authUser = await getAuthUserFromRequest(request.headers.authorization);
+  if (!authUser) return sendError(reply, 401, 'UNAUTHORIZED', 'Missing access token');
+  try {
+    requireOwnedNode(authUser.userId, params.nodeId);
+    uploadSpool.getOwned(params.uploadId, { userId: authUser.userId, ...params });
+    uploadSpool.remove(params.uploadId);
+    reply.code(204).send();
+  } catch (err: any) {
+    const statusCode = httpError[err?.code as keyof typeof httpError] ?? 500;
+    return sendError(reply, statusCode, err?.code || 'INTERNAL_ERROR', err?.message || 'Could not delete upload');
+  }
+});
+
+app.get('/v1/nodes/:nodeId/sessions/:sessionId/attachments/:attachmentId', async (request, reply) => {
+  const params = request.params as { nodeId: string; sessionId: string; attachmentId: string };
+  const authUser = await getAuthUserFromRequest(request.headers.authorization);
+  if (!authUser) return sendError(reply, 401, 'UNAUTHORIZED', 'Missing access token');
+  try {
+    requireOwnedNode(authUser.userId, params.nodeId);
+    const dispatched = await dispatchCommand(
+      authUser,
+      params.nodeId,
+      params.sessionId,
+      'session.attachment.export',
+      uuidv7(),
+      { attachmentId: params.attachmentId },
+      true,
+    );
+    const frame = await dispatched.resultPromise;
+    if (!frame?.ok) throw frame?.error || { code: 'INTERNAL_ERROR', message: 'Attachment export failed' };
+    const result = objectValue(frame.result);
+    const attachment = objectValue(result?.attachment);
+    if (!result || typeof result.exportToken !== 'string' || !attachment || typeof attachment.mediaType !== 'string') {
+      throw { code: 'INTERNAL_ERROR', message: 'Node returned invalid attachment metadata' };
+    }
+    const exported = uploadSpool.validatedAttachment(result.exportToken);
+    if (typeof attachment.bytes === 'number' && attachment.bytes !== exported.bytes) {
+      uploadSpool.removeAttachment(result.exportToken);
+      throw { code: 'INTERNAL_ERROR', message: 'Attachment byte count mismatch' };
+    }
+    const stream = createReadStream(exported.path);
+    stream.once('close', () => uploadSpool.removeAttachment(result.exportToken as string));
+    reply.header('cache-control', 'private, max-age=31536000, immutable');
+    reply.header('content-length', String(exported.bytes));
+    reply.type(attachment.mediaType);
+    return reply.send(stream);
+  } catch (err: any) {
+    const statusCode = httpError[err?.code as keyof typeof httpError] ?? 500;
+    return sendError(reply, statusCode, err?.code || 'INTERNAL_ERROR', err?.message || 'Could not export attachment');
+  }
+});
+
 app.post('/v1/nodes/:nodeId/sessions/:sessionId/followup', async (request, reply) => {
   const params = request.params as { nodeId: string; sessionId: string };
   const body = requireBody(request, followupBody);
@@ -1733,10 +1957,51 @@ app.post('/v1/nodes/:nodeId/sessions/:sessionId/followup', async (request, reply
   }
 
   try {
-    const result = await dispatchCommand(authUser, params.nodeId, params.sessionId, 'session.followup', body.requestId, {
-      content: body.content,
+    const existing = sqlite
+      .prepare('SELECT * FROM commands WHERE request_id = ? AND user_id = ?')
+      .get(body.requestId, authUser.userId) as any | undefined;
+    if (existing) {
+      if (
+        existing.action !== 'session.followup'
+        || existing.node_id !== params.nodeId
+        || existing.session_id !== params.sessionId
+      ) {
+        throw { code: 'INVALID_REQUEST', message: 'requestId was already used for another write' };
+      }
+      const persisted = typeof existing.result_json === 'string'
+        ? JSON.parse(existing.result_json) as CommandResultFrame
+        : undefined;
+      if (persisted && !persisted.ok) {
+        throw persisted.error || { code: 'INTERNAL_ERROR', message: 'Follow-up failed' };
+      }
+      return reply.code(202).send({
+        commandId: existing.id,
+        requestId: body.requestId,
+        accepted: true,
+        duplicates: true,
+      });
+    }
+
+    const uploadIds = (body.uploads || []).map((upload: { uploadId: string }) => upload.uploadId);
+    const descriptors = uploadSpool.readyDescriptors(uploadIds, {
+      userId: authUser.userId,
+      nodeId: params.nodeId,
+      sessionId: params.sessionId,
     });
-    reply.code(202).send(result);
+    const dispatched = await dispatchCommand(authUser, params.nodeId, params.sessionId, 'session.followup', body.requestId, {
+      content: body.content,
+      ...(body.references?.length ? { references: body.references } : {}),
+      ...(descriptors.length ? { uploads: descriptors } : {}),
+    }, true);
+    const frame = await dispatched.resultPromise;
+    if (!frame?.ok) throw frame?.error || { code: 'INTERNAL_ERROR', message: 'Follow-up failed' };
+    if (uploadIds.length) uploadSpool.markConsumed(uploadIds);
+    reply.code(202).send({
+      commandId: dispatched.commandId,
+      requestId: body.requestId,
+      accepted: true,
+      duplicates: dispatched.duplicates,
+    });
   } catch (err: any) {
     const statusCode = httpError[err.code as keyof typeof httpError] ?? 500;
     return sendError(reply, statusCode, err.code || 'INTERNAL_ERROR', err.message || 'Command failed');
@@ -2294,6 +2559,7 @@ app.setErrorHandler((error, request, reply) => {
 setInterval(cleanupOfflineNodes, 5_000);
 setInterval(cleanupStaleRates, 60_000);
 setInterval(cleanupCommandMetadata, 60 * 60_000);
+setInterval(() => uploadSpool.cleanupExpired(), 60_000);
 
 app.listen({ port: PORT, host: HOST }).then(() => {
   app.log.info(`dsh-hub listening on ${HOST}:${PORT}`);

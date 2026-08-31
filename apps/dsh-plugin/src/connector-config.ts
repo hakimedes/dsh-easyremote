@@ -8,6 +8,7 @@ export type ConnectorConfigFile = {
   publicOrigin?: string;
   nodeName?: string;
   defaultCwd?: string;
+  spoolDir?: string;
 };
 
 export type ResolvedConnectorConfig = ConnectorConfigFile & {
@@ -65,6 +66,7 @@ export function loadConnectorConfig(options: LoadOptions = {}): ResolvedConnecto
       ...(typeof config.publicOrigin === 'string' ? { publicOrigin: asHttpUrl(config.publicOrigin) } : {}),
       nodeName: optionalString(config.nodeName) || fallbackNodeName,
       ...(optionalString(config.defaultCwd) ? { defaultCwd: optionalString(config.defaultCwd) } : {}),
+      ...(optionalString(config.spoolDir) ? { spoolDir: optionalString(config.spoolDir) } : {}),
       source: 'file',
     };
   }
@@ -75,6 +77,9 @@ export function loadConnectorConfig(options: LoadOptions = {}): ResolvedConnecto
     nodeName: optionalString(environment.DSH_REMOTE_NODE_NAME) || fallbackNodeName,
     ...(optionalString(environment.DSH_REMOTE_DEFAULT_CWD)
       ? { defaultCwd: optionalString(environment.DSH_REMOTE_DEFAULT_CWD) }
+      : {}),
+    ...(optionalString(environment.DSH_EASYREMOTE_SPOOL_DIR)
+      ? { spoolDir: optionalString(environment.DSH_EASYREMOTE_SPOOL_DIR) }
       : {}),
     source: 'environment',
   };
