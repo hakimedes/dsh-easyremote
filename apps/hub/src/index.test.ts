@@ -402,7 +402,7 @@ describe('DSH Hub P0 integration', () => {
         }));
       }
       if (command.action === 'session.attachment.export') {
-        const exportToken = '018f47e2-7c42-7abc-8def-abcdefabcdef';
+        const exportToken = uuidv7();
         const bytes = Buffer.from('authorized-image-bytes');
         mkdirSync(spoolDir, { recursive: true });
         writeFileSync(join(spoolDir, `${exportToken}.attachment`), bytes, { mode: 0o600 });
