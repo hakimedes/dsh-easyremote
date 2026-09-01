@@ -23,7 +23,7 @@ npx @hakimedes/dsh-easyremote
 
 首次引导固定按三个阶段展示：
 
-1. 扫码下载 Community APK，或使用 ADB 一键安装；
+1. 扫码下载并安装 Community APK；
 2. 选择快速启动或完成固定域名配置；
 3. Connector 就绪后，在同一页面扫描实时互联二维码。
 
@@ -87,7 +87,7 @@ dsh-easyremote setup
 
 Connector 始终通过回环地址直连本机 Hub，避免电脑端请求绕经 Cloudflare 后再回到本机。`publicOrigin` 只用于检测公网入口变化并轮换手机恢复二维码；它变化时不会改变 Node Secret 或 Install ID。环境变量仍作为兼容回退。
 
-从引导页扫码下载 Community APK，或在 ADB 已连接时点击一键安装。Tunnel 与 Connector 就绪后，引导页会自动显示第二个、用于连接手机的一次性二维码。首次扫描 Hub 二维码时，Community APK 会显示域名确认；一个 App 同时只绑定一个 Hub。更换无关 Hub 必须退出登录，合法恢复二维码只能重绑同一个 `hubId`。
+从引导页扫码下载并安装 Community APK。Tunnel 与 Connector 就绪后，引导页会自动显示第二个、用于连接手机的一次性二维码。首次扫描 Hub 二维码时，Community APK 会显示域名确认；一个 App 同时只绑定一个 Hub。更换无关 Hub 必须退出登录，合法恢复二维码只能重绑同一个 `hubId`。
 
 DSH Web 重启后会在 **Settings → Remote** 自动装载连接状态。已连接用户可选择 **Generate connection QR**；二维码显示期间可选择 **Refresh connection QR**。每次生成新码时，Hub 会立即让同一 Node 的旧待用二维码过期。
 

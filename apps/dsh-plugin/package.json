@@ -1,6 +1,6 @@
 {
   "name": "@hakimedes/dsh-easyremote-connector",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Outbound DeepSeek Harness connector for DSH EasyRemote",
   "type": "module",
   "main": "lib/index.js",

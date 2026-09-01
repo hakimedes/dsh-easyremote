@@ -58,7 +58,7 @@ The package has no `postinstall` script. The wizard listens only on `127.0.0.1` 
 
 ### 2. Download the APK and choose a connection path
 
-The wizard first displays the **Community APK download QR**. You can also [download the latest APK directly](https://github.com/hakimedes/dsh-easyremote/releases/latest/download/DSH-EasyRemote-Community.apk), or use one-click ADB installation when exactly one authorized phone is connected.
+The wizard first displays the **Community APK download QR**. You can also [download the latest APK directly](https://github.com/hakimedes/dsh-easyremote/releases/latest/download/DSH-EasyRemote-Community.apk), then return to the wizard to continue connection setup.
 
 Then choose:
 

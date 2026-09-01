@@ -51,8 +51,11 @@ describe('localhost setup wizard', () => {
     expect(html).toContain('探索未至之境');
     expect(html).toContain('csrf-only');
     expect(html).toContain('Community APK');
+    expect(html).toContain('安装完成后返回本页继续配置连接');
     expect(html).toContain('apk-qr');
     expect(html).toContain('连接手机');
+    expect(html).not.toContain('ADB 一键安装');
+    expect(html).not.toContain('install-adb');
     expect(html.indexOf('data-stage="apk"')).toBeLessThan(html.indexOf('data-stage="pairing"'));
     expect(html).not.toContain('dsh_easyremote_session');
   });

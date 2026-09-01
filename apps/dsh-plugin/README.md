@@ -30,7 +30,7 @@ only needs outbound HTTPS/WSS access to Hub.
 Install the packaged `.tgz` from this repository:
 
 ```bash
-dsh plugin --profile web add /absolute/path/to/hakimedes-dsh-easyremote-connector-0.3.0.tgz
+dsh plugin --profile web add /absolute/path/to/hakimedes-dsh-easyremote-connector-0.3.1.tgz
 ```
 
 The package declares `dsh.bundle.patch`, so `dsh plugin add` registers the

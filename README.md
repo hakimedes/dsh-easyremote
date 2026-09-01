@@ -58,7 +58,7 @@ npx @hakimedes/dsh-easyremote@latest
 
 ### 2. 下载 APK 并选择连接方式
 
-引导页会先展示 **Community APK 下载二维码**。也可以直接[下载最新版 APK](https://github.com/hakimedes/dsh-easyremote/releases/latest/download/DSH-EasyRemote-Community.apk)，或在电脑已通过 ADB 连接一台已授权手机时一键安装。
+引导页会先展示 **Community APK 下载二维码**。也可以直接[下载最新版 APK](https://github.com/hakimedes/dsh-easyremote/releases/latest/download/DSH-EasyRemote-Community.apk)，安装完成后返回引导页继续配置连接。
 
 然后选择：
 

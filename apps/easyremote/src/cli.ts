@@ -17,7 +17,6 @@ import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { v7 as uuidv7 } from 'uuid';
 
-import { installCommunityApk } from './android.js';
 import { installUserAutostart, removeUserAutostart } from './autostart.js';
 import {
   materializeBundledPnpmBin,
@@ -45,11 +44,9 @@ import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setu
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
 import { startWizardServer, type WizardAction } from './wizard.js';
 
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 const PACKAGE_NAME = '@hakimedes/dsh-easyremote';
-const CONNECTOR_VERSION = '0.3.0';
-const COMMUNITY_APK_NAME = 'DSH-EasyRemote-Community.apk';
-const RELEASE_BASE = 'https://github.com/hakimedes/dsh-easyremote/releases/latest/download';
+const CONNECTOR_VERSION = '0.3.1';
 const CLI_SCRIPT = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(CLI_SCRIPT), '..');
 const APP_HOME = process.env.DSH_EASYREMOTE_HOME || join(homedir(), '.dsh-easyremote');
@@ -193,7 +190,6 @@ function createSetupActions(): Record<string, WizardAction> {
         ].join('\n'),
       };
     },
-    'apk/install-adb': installApkWizardAction,
   };
 }
 
@@ -387,17 +383,6 @@ async function holdControlConsole(message: string) {
   }
 }
 
-async function installApkWizardAction() {
-  const result = await installCommunityApk({
-    apkUrl: `${RELEASE_BASE}/${COMMUNITY_APK_NAME}`,
-    checksumUrl: `${RELEASE_BASE}/SHA256SUMS`,
-    destination: join(paths.packagesDir, COMMUNITY_APK_NAME),
-    capture: captureCommand,
-    run: (command, args) => runProcessLaunch({ command, args }, true),
-  });
-  return { ok: true, message: `Community APK 已安装到设备：${result.device}` };
-}
-
 function monitorController() {
   controller.waitForExit().then(({ role, code }) => {
     console.error(`${role} exited (${code ?? 'signal'}); reopen the wizard or run start to retry.`);
@@ -581,21 +566,6 @@ function openBrowser(url: string) {
     const child = spawn(launch.command, launch.args, { detached: true, stdio: 'ignore', windowsHide: true });
     child.unref();
   } catch {}
-}
-
-function captureCommand(command: string, args: string[]) {
-  return new Promise<string>((resolveOutput, rejectOutput) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-    const output: Buffer[] = [];
-    const errors: Buffer[] = [];
-    child.stdout.on('data', (chunk: Buffer) => output.push(chunk));
-    child.stderr.on('data', (chunk: Buffer) => errors.push(chunk));
-    child.once('error', rejectOutput);
-    child.once('close', (code) => {
-      if (code === 0) resolveOutput(Buffer.concat(output).toString('utf8'));
-      else rejectOutput(new Error(`${command} failed: ${Buffer.concat(errors).toString('utf8').trim()}`));
-    });
-  });
 }
 
 function assertNodeVersion() {
