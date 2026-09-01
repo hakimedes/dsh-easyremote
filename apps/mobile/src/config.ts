@@ -8,7 +8,7 @@ function stripTrailingSlash(value: string) {
 
 export const HUB_HTTP_URL = stripTrailingSlash(process.env.EXPO_PUBLIC_HUB_URL || DEFAULT_HUB_HTTP_URL);
 export const HUB_WSS_URL = HUB_HTTP_URL.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
-export const APP_VERSION = '0.3.2';
+export const APP_VERSION = '0.3.3';
 export const APP_SCHEME = 'dshremote';
 export const ALLOW_LOCAL_HUB = process.env.EXPO_PUBLIC_ALLOW_LOCAL_HUB === 'true';
 export const APP_VARIANT = process.env.EXPO_PUBLIC_APP_VARIANT === 'internal' ? 'internal' : 'community';

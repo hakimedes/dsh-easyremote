@@ -25,7 +25,8 @@ export async function cachedAttachment(input: {
   const FileSystem = await import('expo-file-system');
   const directory = `${root(FileSystem.cacheDirectory)}${stableKey(input.hubId)}/`;
   await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
-  const extension = input.mediaType === 'image/png' ? 'png'
+  const extension = input.mediaType.split(';', 1)[0]?.trim().toLowerCase() === 'image/svg+xml' ? 'svg'
+    : input.mediaType === 'image/png' ? 'png'
     : input.mediaType === 'image/gif' ? 'gif'
       : input.mediaType === 'image/webp' ? 'webp' : 'jpg';
   const target = `${directory}${stableKey(input.attachmentId)}.${extension}`;

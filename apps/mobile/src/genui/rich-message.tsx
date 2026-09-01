@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MessageBlock, SessionMessage } from '../domain/types';
 import { apiClient } from '../api/client';
 import { cachedAttachment } from '../storage/attachment-cache';
@@ -9,6 +9,7 @@ import { contentFingerprint, parseRenderUiInput, splitRichContent } from './prot
 import { GenuiRenderer, type GenuiAction } from './renderer';
 import { SafeMarkdown } from './safe-markdown';
 import type { SessionPanel } from './panel';
+import { SafeImagePreview } from './safe-image-preview';
 
 export type RichMessageContext = {
   nodeId: string;
@@ -39,7 +40,7 @@ function AttachmentImage({ block, nodeId, sessionId }: { block: Extract<MessageB
   const aspectRatio = block.width > 0 && block.height > 0 ? Math.max(0.5, Math.min(2.2, block.width / block.height)) : 1.2;
   if (failed) return <View style={[styles.attachmentFailed, { backgroundColor: theme.colors.surface, borderColor: theme.colors.line }]}><Ionicons name="image-outline" size={20} color={theme.colors.faint} /><Text style={[styles.attachmentLabel, { color: theme.colors.muted }]}>Image unavailable · tap after reconnecting</Text></View>;
   if (!uri) return <View style={[styles.attachmentLoading, { backgroundColor: theme.colors.surface }]}><ActivityIndicator color={theme.colors.accent} /></View>;
-  return <View style={styles.attachmentWrap}><Image source={{ uri }} resizeMode="contain" accessibilityLabel={block.name || 'DSH image attachment'} style={[styles.attachmentImage, { aspectRatio, backgroundColor: theme.colors.surface }]} />{block.name && <Text style={[styles.attachmentName, { color: theme.colors.muted }]}>{block.name}</Text>}</View>;
+  return <View style={styles.attachmentWrap}><SafeImagePreview uri={uri} mediaType={block.mediaType} aspectRatio={aspectRatio} accessibilityLabel={block.name || 'DSH image attachment'} frameStyle={styles.attachmentImage} />{block.name && <Text style={[styles.attachmentName, { color: theme.colors.muted }]}>{block.name}</Text>}</View>;
 }
 
 export function RichMessage({ message, visibleText, context }: { message: SessionMessage; visibleText: string; context: RichMessageContext }) {

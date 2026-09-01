@@ -1,10 +1,12 @@
 import { safeExternalUrl } from './protocol';
+import { SVG_PREVIEW_MAX_CHARS } from './svg-preview';
 
 export type MarkdownBlock =
   | { type: 'heading'; level: number; text: string }
   | { type: 'paragraph'; text: string }
   | { type: 'list'; ordered: boolean; items: string[] }
   | { type: 'code'; language?: string; code: string }
+  | { type: 'svg'; xml: string }
   | { type: 'table'; columns: string[]; rows: string[][] }
   | { type: 'image'; alt: string; url: string };
 
@@ -31,7 +33,11 @@ export function parseMarkdown(value: string): MarkdownBlock[] {
       index += 1;
       while (index < lines.length && !/^```\s*$/.test(lines[index]!)) body.push(lines[index++]!);
       if (index < lines.length) index += 1;
-      blocks.push({ type: 'code', ...(fence[1] ? { language: fence[1] } : {}), code: body.join('\n').slice(0, 12_000) });
+      const rawCode = body.join('\n');
+      const code = rawCode.slice(0, fence[1]?.toLowerCase() === 'svg' ? SVG_PREVIEW_MAX_CHARS + 1 : 12_000);
+      blocks.push(fence[1]?.toLowerCase() === 'svg'
+        ? { type: 'svg', xml: code }
+        : { type: 'code', ...(fence[1] ? { language: fence[1] } : {}), code });
       continue;
     }
     const image = line.trim().match(/^!\[([^\]]*)\]\(([^)]+)\)$/);

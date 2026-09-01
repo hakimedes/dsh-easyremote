@@ -46,9 +46,9 @@ import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setu
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
 import { startWizardServer, type WizardAction } from './wizard.js';
 
-const VERSION = '0.3.2';
+const VERSION = '0.3.3';
 const PACKAGE_NAME = '@hakimedes/dsh-easyremote';
-const CONNECTOR_VERSION = '0.3.2';
+const CONNECTOR_VERSION = '0.3.3';
 const CLI_SCRIPT = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(CLI_SCRIPT), '..');
 const APP_HOME = process.env.DSH_EASYREMOTE_HOME || join(homedir(), '.dsh-easyremote');

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Image, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
 import type { GenuiNode, GenuiSpec } from './protocol';
 import { readGenuiFormState, writeGenuiFormState } from '../storage/database';
 import { radii, spacing, type, useTheme, type AppTheme } from '../ui/theme';
 import { SandboxVisual } from './sandbox-visual';
+import { SafeImagePreview } from './safe-image-preview';
 
 export type GenuiAction = { action: string; payload: Record<string, unknown> };
 
@@ -91,7 +92,7 @@ function NodeView({ node, path, context }: { node: GenuiNode; path: string; cont
     return <View style={styles.field}><View style={styles.switchRow}><Text style={[styles.label, styles.flex, { color: theme.colors.muted }]}>{str(node.label, 'Value')}</Text><Text style={[styles.sliderValue, { color: theme.colors.text }]}>{current}</Text></View><View style={styles.sliderRow}><Pressable disabled={!context.interactive || current <= min} onPress={() => change(current - step)} style={[styles.stepper, { backgroundColor: theme.colors.surfaceSoft }]}><Ionicons name="remove" size={18} color={theme.colors.text} /></Pressable><View style={[styles.track, { backgroundColor: theme.colors.line }]}><View style={[styles.trackFill, { width: `${max === min ? 0 : (current - min) / (max - min) * 100}%`, backgroundColor: theme.colors.accent }]} /></View><Pressable disabled={!context.interactive || current >= max} onPress={() => change(current + step)} style={[styles.stepper, { backgroundColor: theme.colors.surfaceSoft }]}><Ionicons name="add" size={18} color={theme.colors.text} /></Pressable></View></View>;
   }
   if (node.type === 'link') return node.href ? <Text accessibilityRole="link" onPress={() => void Linking.openURL(str(node.href))} style={[styles.link, { color: theme.colors.accent }]}>{str(node.label)}</Text> : <Text style={[styles.text, { color: theme.colors.muted }]}>{str(node.label)}</Text>;
-  if (node.type === 'image') return <View style={styles.media}><Image source={{ uri: str(node.src) }} resizeMode="contain" accessibilityLabel={str(node.alt, 'Generated image')} style={[styles.mediaImage, { backgroundColor: theme.colors.surfaceSoft }]} />{Boolean(node.alt) && <Text style={[styles.caption, { color: theme.colors.muted }]}>{str(node.alt)}</Text>}</View>;
+  if (node.type === 'image') return <View style={styles.media}><SafeImagePreview uri={str(node.src)} accessibilityLabel={str(node.alt, 'Generated image')} frameStyle={styles.mediaImage} />{Boolean(node.alt) && <Text style={[styles.caption, { color: theme.colors.muted }]}>{str(node.alt)}</Text>}</View>;
   if (node.type === 'badge') return <View style={[styles.badge, { backgroundColor: `${node.tone === 'danger' ? theme.colors.danger : theme.colors.accent}18` }]}><Text style={[styles.badgeText, { color: node.tone === 'danger' ? theme.colors.danger : theme.colors.accent }]}>{str(node.label)}</Text></View>;
   if (node.type === 'stat') return <View style={[styles.stat, { backgroundColor: theme.colors.surface, borderColor: theme.colors.line }]}><Text style={[styles.statLabel, { color: theme.colors.muted }]}>{str(node.label)}</Text><Text style={[styles.statValue, { color: theme.colors.text }]}>{str(node.value)}</Text>{Boolean(node.delta) && <Text style={[styles.statDelta, { color: theme.colors.accent }]}>{str(node.delta)}</Text>}</View>;
   if (node.type === 'progress') return <View style={styles.field}><View style={styles.switchRow}><Text style={[styles.label, { color: theme.colors.muted }]}>{str(node.label)}</Text><Text style={[styles.label, { color: theme.colors.text }]}>{str(node.valueLabel, `${num(node.value)}%`)}</Text></View><View style={[styles.progress, { backgroundColor: theme.colors.line }]}><View style={[styles.progressFill, { width: `${num(node.value)}%`, backgroundColor: theme.colors.accent }]} /></View></View>;

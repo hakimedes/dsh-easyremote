@@ -1,6 +1,7 @@
-import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { parseInline, parseMarkdown } from './markdown-parser';
 import { radii, spacing, type, useTheme } from '../ui/theme';
+import { SafeImagePreview } from './safe-image-preview';
 
 function InlineText({ value }: { value: string }) {
   const theme = useTheme();
@@ -17,7 +18,8 @@ export function SafeMarkdown({ value, compact = false }: { value: string; compac
     if (block.type === 'paragraph') return <InlineText key={index} value={block.text} />;
     if (block.type === 'list') return <View key={index} style={styles.list}>{block.items.map((item, itemIndex) => <View key={itemIndex} style={styles.listRow}><Text style={[styles.bullet, { color: theme.colors.accent }]}>{block.ordered ? `${itemIndex + 1}.` : '•'}</Text><View style={styles.flex}><InlineText value={item} /></View></View>)}</View>;
     if (block.type === 'code') return <ScrollView key={index} horizontal showsHorizontalScrollIndicator={false} style={[styles.code, { backgroundColor: theme.colors.surface, borderColor: theme.colors.line }]}><View><Text style={[styles.codeLanguage, { color: theme.colors.faint }]}>{block.language || 'CODE'}</Text><Text selectable style={[styles.codeText, { color: theme.colors.text }]}>{block.code}</Text></View></ScrollView>;
-    if (block.type === 'image') return <View key={index} style={styles.imageWrap}><Image source={{ uri: block.url }} resizeMode="contain" accessibilityLabel={block.alt || 'Markdown image'} style={[styles.image, { backgroundColor: theme.colors.surface }]} />{block.alt && <Text style={[styles.caption, { color: theme.colors.muted }]}>{block.alt}</Text>}</View>;
+    if (block.type === 'svg') return <SafeImagePreview key={index} xml={block.xml} accessibilityLabel="SVG preview" frameStyle={styles.image} />;
+    if (block.type === 'image') return <View key={index} style={styles.imageWrap}><SafeImagePreview uri={block.url} accessibilityLabel={block.alt || 'Markdown image'} frameStyle={styles.image} />{block.alt && <Text style={[styles.caption, { color: theme.colors.muted }]}>{block.alt}</Text>}</View>;
     return <ScrollView key={index} horizontal showsHorizontalScrollIndicator style={[styles.table, { borderColor: theme.colors.line }]}><View>{[block.columns, ...block.rows].map((row, rowIndex) => <View key={rowIndex} style={[styles.tableRow, rowIndex === 0 && { backgroundColor: theme.colors.surfaceSoft }]}>{block.columns.map((_, columnIndex) => <Text key={columnIndex} selectable style={[styles.cell, rowIndex === 0 && styles.bold, { color: theme.colors.text, borderColor: theme.colors.line }]}>{row[columnIndex] || ''}</Text>)}</View>)}</View></ScrollView>;
   })}</View>;
 }
