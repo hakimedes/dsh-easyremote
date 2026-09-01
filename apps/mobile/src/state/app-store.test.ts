@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionSummary, SessionView } from '../domain/types';
 
 vi.mock('react-native', () => ({
@@ -105,6 +105,50 @@ describe('bootstrap', () => {
       isAuthenticated: true,
       cloudAvailable: false,
     });
+  });
+});
+
+describe('cloud availability', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    useAppStore.setState({ cloudAvailable: true, errorMessage: null, nodes: [], realtimeStatus: 'offline' });
+    vi.mocked(apiClient.listNodes).mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('does not report the network unavailable after one transient request failure', async () => {
+    vi.mocked(apiClient.listNodes).mockRejectedValueOnce(new TypeError('Network request failed'));
+
+    await expect(useAppStore.getState().refreshNodes()).rejects.toThrow('Network request failed');
+    expect(useAppStore.getState().cloudAvailable).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(useAppStore.getState().cloudAvailable).toBe(false);
+  });
+
+  it('cancels a pending offline transition when the next request succeeds', async () => {
+    vi.mocked(apiClient.listNodes)
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+      .mockResolvedValueOnce([]);
+
+    await expect(useAppStore.getState().refreshNodes()).rejects.toThrow('Network request failed');
+    await useAppStore.getState().refreshNodes();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(useAppStore.getState().cloudAvailable).toBe(true);
+  });
+
+  it('keeps the Hub available while the realtime channel is connected', async () => {
+    useAppStore.setState({ realtimeStatus: 'connected' });
+    vi.mocked(apiClient.listNodes).mockRejectedValueOnce(new TypeError('Network request failed'));
+
+    await expect(useAppStore.getState().refreshNodes()).rejects.toThrow('Network request failed');
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(useAppStore.getState().cloudAvailable).toBe(true);
   });
 });
 

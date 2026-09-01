@@ -1,14 +1,40 @@
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
   buildConnectorInstallLaunch,
   buildDshProfileProbeLaunch,
   cleanupLegacyConnectorPatches,
+  connectorUpgradeRequired,
   inferDshHomeFromLauncher,
   inferDshHomeFromProfileOutput,
+  readInstalledConnectorVersion,
 } from './connector-install.js';
 
 describe('Connector installation', () => {
+  it('detects an older Connector installed in the selected DSH profile', () => {
+    const dshHome = mkdtempSync(join(tmpdir(), 'dsh-easyremote-connector-'));
+    const packageDirectory = join(
+      dshHome,
+      'profiles',
+      'web',
+      'node_modules',
+      '@hakimedes',
+      'dsh-easyremote-connector',
+    );
+    mkdirSync(packageDirectory, { recursive: true });
+    writeFileSync(join(packageDirectory, 'package.json'), JSON.stringify({ version: '0.2.9' }));
+
+    const installed = readInstalledConnectorVersion(dshHome, 'web');
+    expect(installed).toBe('0.2.9');
+    expect(connectorUpgradeRequired(installed, '0.3.2')).toBe(true);
+    expect(connectorUpgradeRequired('0.3.2', '0.3.2')).toBe(false);
+    expect(connectorUpgradeRequired('0.3.3', '0.3.2')).toBe(false);
+    expect(connectorUpgradeRequired('0.3.2-rc.1', '0.3.2')).toBe(true);
+  });
+
   it('installs the packaged Connector through the selected DSH profile', () => {
     const env = { PATH: '/state/bin:/usr/bin' };
     expect(buildConnectorInstallLaunch('/usr/local/bin/dsh', 'web', '/state/connector.tgz', env)).toEqual({

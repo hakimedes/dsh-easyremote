@@ -2,7 +2,7 @@
   "expo": {
     "name": "DSH EasyRemote",
     "slug": "dsh-easyremote",
-    "version": "0.3.0",
+    "version": "0.3.2",
     "orientation": "portrait",
     "scheme": "dshremote",
     "icon": "./assets/icon.png",

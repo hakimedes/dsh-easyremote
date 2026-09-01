@@ -1,10 +1,48 @@
 import type { ProcessLaunch } from './runtime.js';
-import { posix, win32 } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, posix, win32 } from 'node:path';
 
 const MANAGED_CONNECTOR_PATCH = /^(?:# DSH (?:EasyRemote Connector|Remote Hub)[^\r\n]*(?:\r?\n|$))?- insert:[ \t]*(?:\r?\n)[ \t]{4}- id: (?:dsh-easyremote-connector|dsh-remote-hub-connector)[ \t]*(?:\r?\n)[ \t]{6}name: ['"]?(?:@hakimedes\/dsh-easyremote-connector|@dsh-remote\/hub-connector)['"]?[ \t]*(?:\r?\n|$)/gm;
 
 function assertProfileName(profile: string) {
   if (!/^[a-zA-Z0-9._-]+$/.test(profile)) throw new Error('Invalid DSH profile name');
+}
+
+export function readInstalledConnectorVersion(dshHome: string, profile: string) {
+  assertProfileName(profile);
+  try {
+    const packageJson = JSON.parse(readFileSync(join(
+      dshHome,
+      'profiles',
+      profile,
+      'node_modules',
+      '@hakimedes',
+      'dsh-easyremote-connector',
+      'package.json',
+    ), 'utf8')) as { version?: unknown };
+    return typeof packageJson.version === 'string' ? packageJson.version : null;
+  } catch {
+    return null;
+  }
+}
+
+export function connectorUpgradeRequired(installedVersion: string | null, expectedVersion: string) {
+  if (!installedVersion) return true;
+  const numeric = (version: string) => version
+    .replace(/^v/, '')
+    .split('-', 1)[0]
+    .split('.')
+    .map((part) => Number(part));
+  const installed = numeric(installedVersion);
+  const expected = numeric(expectedVersion);
+  if (installed.some((part) => !Number.isInteger(part)) || expected.some((part) => !Number.isInteger(part))) {
+    return installedVersion !== expectedVersion;
+  }
+  for (let index = 0; index < Math.max(installed.length, expected.length); index += 1) {
+    const difference = (installed[index] || 0) - (expected[index] || 0);
+    if (difference !== 0) return difference < 0;
+  }
+  return installedVersion !== expectedVersion;
 }
 
 export function buildConnectorInstallLaunch(

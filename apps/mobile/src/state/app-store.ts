@@ -64,6 +64,27 @@ const realtime = new RealtimeClient({
 });
 
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
+let cloudUnavailableTimer: ReturnType<typeof setTimeout> | null = null;
+const CLOUD_UNAVAILABLE_GRACE_MS = 5_000;
+
+function cancelCloudUnavailable() {
+  if (cloudUnavailableTimer) clearTimeout(cloudUnavailableTimer);
+  cloudUnavailableTimer = null;
+}
+
+function markCloudAvailable() {
+  cancelCloudUnavailable();
+  useAppStore.setState({ cloudAvailable: true });
+}
+
+function markCloudUnavailableAfterGrace(error: unknown) {
+  if ((error instanceof ApiError && error.status < 500 && error.status !== 408) || cloudUnavailableTimer) return;
+  cloudUnavailableTimer = setTimeout(() => {
+    cloudUnavailableTimer = null;
+    if (useAppStore.getState().realtimeStatus === 'connected') return;
+    useAppStore.setState({ cloudAvailable: false });
+  }, CLOUD_UNAVAILABLE_GRACE_MS);
+}
 
 function sessionKey(nodeId: string, sessionId: string) {
   return `${nodeId}:${sessionId}`;
@@ -139,6 +160,7 @@ export const useAppStore = create<AppStateShape>((set, get) => ({
     try {
       accessToken = await apiClient.refresh();
     } catch {
+      cancelCloudUnavailable();
       set({ bootstrapped: true, initialSyncComplete: true, isAuthenticated: true, cloudAvailable: false });
       return;
     }
@@ -151,11 +173,13 @@ export const useAppStore = create<AppStateShape>((set, get) => ({
     try {
       const me = await apiClient.getMe();
       cacheUser(me.user);
-      set({ user: me.user, cloudAvailable: true });
+      set({ user: me.user });
+      markCloudAvailable();
       await get().refreshNodes();
       realtime.updateServer(apiClient.server);
       void realtime.connect();
     } catch {
+      cancelCloudUnavailable();
       set({ cloudAvailable: false });
     } finally {
       set({ initialSyncComplete: true });
@@ -190,10 +214,11 @@ export const useAppStore = create<AppStateShape>((set, get) => ({
     try {
       const nodes = await apiClient.listNodes();
       cacheNodes(nodes);
-      set({ nodes, cloudAvailable: true, errorMessage: null });
+      set({ nodes, errorMessage: null });
+      markCloudAvailable();
     } catch (error) {
       if (error instanceof ApiError && error.code === 'UNAUTHORIZED') await get().logout();
-      set({ cloudAvailable: false });
+      markCloudUnavailableAfterGrace(error);
       throw error;
     }
   },
@@ -202,11 +227,12 @@ export const useAppStore = create<AppStateShape>((set, get) => ({
     try {
       const sessions = await apiClient.listSessions(nodeId);
       cacheSessions(nodeId, sessions);
-      set((state) => ({ sessionsByNode: { ...state.sessionsByNode, [nodeId]: sessions }, cloudAvailable: true }));
-    } catch {
+      set((state) => ({ sessionsByNode: { ...state.sessionsByNode, [nodeId]: sessions } }));
+      markCloudAvailable();
+    } catch (error) {
       const cached = readCachedSessions(nodeId);
       if (cached.length) set((state) => ({ sessionsByNode: { ...state.sessionsByNode, [nodeId]: cached } }));
-      set({ cloudAvailable: false });
+      markCloudUnavailableAfterGrace(error);
     }
   },
 
@@ -227,13 +253,14 @@ export const useAppStore = create<AppStateShape>((set, get) => ({
     try {
       const snapshot = await apiClient.getSnapshot(nodeId, sessionId);
       const view = sessionFromSnapshot(nodeId, sessionId, snapshot, summary);
-      set((state) => ({ sessionViews: { ...state.sessionViews, [key]: view }, cloudAvailable: true }));
+      set((state) => ({ sessionViews: { ...state.sessionViews, [key]: view } }));
+      markCloudAvailable();
       cacheSessionView(view);
       realtime.subscribe(nodeId, sessionId, view.lastSourceSeq);
       void realtime.connect();
-    } catch {
+    } catch (error) {
       if (!cached) set((state) => ({ sessionViews: { ...state.sessionViews, [key]: emptySessionView(summary, true) } }));
-      set({ cloudAvailable: false });
+      markCloudUnavailableAfterGrace(error);
     }
   },
 
@@ -242,8 +269,8 @@ export const useAppStore = create<AppStateShape>((set, get) => ({
       const presets = await apiClient.getAgentPresets(nodeId);
       set((state) => ({
         agentPresetsByNode: { ...state.agentPresetsByNode, [nodeId]: presets },
-        cloudAvailable: true,
       }));
+      markCloudAvailable();
       return presets;
     } catch (error) {
       set({ errorMessage: error instanceof Error ? error.message : 'Could not load agent modes' });
@@ -346,7 +373,13 @@ export const useAppStore = create<AppStateShape>((set, get) => ({
   },
 
   clearError: () => set({ errorMessage: null }),
-  setRealtimeStatus: (status: RealtimeStatus) => set({ realtimeStatus: status }),
+  setRealtimeStatus: (status: RealtimeStatus) => {
+    if (status === 'connected') markCloudAvailable();
+    set((state) => ({
+      realtimeStatus: status,
+      ...(status === 'connected' && state.errorMessage === "Can't reach DSH Remote" ? { errorMessage: null } : {}),
+    }));
+  },
   setError: (errorMessage: string) => set({ errorMessage }),
   receiveEvents: (events: SessionEvent[]) => set((state) => {
     const next = { ...state.sessionViews };
@@ -374,11 +407,12 @@ export const useAppStore = create<AppStateShape>((set, get) => ({
   handleAppState: (status) => {
     if (status === 'active' && get().isAuthenticated) {
       void get().refreshNodes();
-      void realtime.connect();
+      realtime.reconnectNow();
       for (const view of Object.values(get().sessionViews)) realtime.sync(view.session.nodeId, view.session.sessionId);
     }
   },
   logout: async () => {
+    cancelCloudUnavailable();
     realtime.disconnect();
     await apiClient.logout();
     await clearAttachmentCache();

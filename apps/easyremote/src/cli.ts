@@ -29,8 +29,10 @@ import {
   buildConnectorInstallLaunch,
   buildDshProfileProbeLaunch,
   cleanupLegacyConnectorPatches,
+  connectorUpgradeRequired,
   inferDshHomeFromLauncher,
   inferDshHomeFromProfileOutput,
+  readInstalledConnectorVersion,
 } from './connector-install.js';
 import { EasyRemoteController } from './controller.js';
 import { inspectConnectorRuntime, probeWebSocket, runDoctor } from './doctor.js';
@@ -44,9 +46,9 @@ import { loadSetupProgress, saveSetupProgress, type SetupProgress } from './setu
 import { stopManagedChild, waitForHubMeta, waitForQuickOrigin } from './supervisor.js';
 import { startWizardServer, type WizardAction } from './wizard.js';
 
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 const PACKAGE_NAME = '@hakimedes/dsh-easyremote';
-const CONNECTOR_VERSION = '0.3.1';
+const CONNECTOR_VERSION = '0.3.2';
 const CLI_SCRIPT = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = resolve(dirname(CLI_SCRIPT), '..');
 const APP_HOME = process.env.DSH_EASYREMOTE_HOME || join(homedir(), '.dsh-easyremote');
@@ -194,12 +196,13 @@ function createSetupActions(): Record<string, WizardAction> {
 }
 
 async function setupCommand() {
+  const connector = await installConnectorSafely('web');
   const wizard = await startWizardServer({
     version: VERSION,
     getState: async () => ({
       state: loadInstallState(paths.installState),
       progress: loadSetupProgress(paths.setupProgress),
-      message: '本机控制面已就绪。请选择连接路径。',
+      message: ['本机控制面已就绪。请选择连接路径。', connector].join('\n'),
     }),
     getPairing: () => loadPairingState(paths.pairingState),
     actions: createSetupActions(),
@@ -212,25 +215,28 @@ async function setupCommand() {
 }
 
 async function quickCommand() {
+  const connector = await installConnectorSafely('web');
   const result = await controller.startQuick();
   console.log(`Quick Tunnel: ${result.state.tunnel.publicOrigin}`);
   console.log(result.recoveryRequired
     ? 'Address changed. Open DSH Web /__dsh_remote_v1/pair and scan the recovery QR.'
     : 'Open DSH Web /__dsh_remote_v1/pair to pair the Community APK.');
-  await runForeground(formatStatus(result.state, true));
+  console.log(connector);
+  await runForeground([formatStatus(result.state, true), connector].join('\n'));
 }
 
 async function startCommand() {
   const state = loadInstallState(paths.installState);
   if (!state) return setupCommand();
+  const connector = await installConnectorSafely('web');
   if (await localHubOnline(state.hub.port)) {
-    const status = formatStatus(state, true);
+    const status = [formatStatus(state, true), connector].join('\n');
     console.log(status);
     await holdControlConsole(status);
     return;
   }
   const result = state.activeMode === 'named' ? await controller.startNamed() : await controller.startQuick();
-  const status = formatStatus(result.state, true);
+  const status = [formatStatus(result.state, true), connector].join('\n');
   console.log(status);
   await runForeground(status);
 }
@@ -320,7 +326,9 @@ async function upgradeCommand() {
       run: (command, args) => runProcessLaunch({ command, args }),
     });
   }
+  const connector = await installConnectorSafely('web');
   console.log(`Upgrade staged after backup: ${backupPath}`);
+  console.log(connector);
 }
 
 async function uninstallCommand(args: string[]) {
@@ -427,8 +435,10 @@ function namedProgress(
 
 async function installConnectorSafely(profile: string) {
   try {
-    await installPackagedConnector(profile);
-    return `Connector 已安装到 DSH profile: ${profile}。如 DSH 已运行，请重启一次。`;
+    const result = await installPackagedConnector(profile);
+    return result.changed
+      ? `Connector 已从 ${result.previousVersion || '未安装'} 升级到 ${CONNECTOR_VERSION}（DSH profile: ${profile}）。请重启一次 DSH Web 以启用图片和文件上传。`
+      : `Connector ${CONNECTOR_VERSION} 已是最新版本（DSH profile: ${profile}）。若手机仍提示升级，请重启一次 DSH Web。`;
   } catch (error) {
     return `Connector 自动安装未完成：${error instanceof Error ? error.message : String(error)}`;
   }
@@ -438,17 +448,6 @@ async function installPackagedConnector(profile: string) {
   if (!existsSync(join(connectorRuntime, 'package.json'))) throw new Error('npm package does not contain the Connector runtime');
   const dshExecutable = findExecutable(process.platform === 'win32' ? 'dsh.cmd' : 'dsh');
   if (!dshExecutable) throw new Error('dsh executable was not found in PATH');
-  mkdirSync(paths.packagesDir, { recursive: true, mode: 0o700 });
-  await runProcessLaunch({
-    command: process.platform === 'win32' ? 'npm.cmd' : 'npm',
-    args: ['pack', connectorRuntime, '--pack-destination', paths.packagesDir, '--ignore-scripts'],
-  });
-  const packagePath = readdirSync(paths.packagesDir)
-    .filter((name) => name.endsWith('.tgz') && name.includes('dsh-easyremote-connector'))
-    .map((name) => join(paths.packagesDir, name))
-    .sort()
-    .at(-1);
-  if (!packagePath) throw new Error('Unable to build the Connector package');
   const managedBin = materializeBundledPnpmBin({
     directory: join(paths.root, 'bin'),
     platform: process.platform,
@@ -460,9 +459,36 @@ async function installPackagedConnector(profile: string) {
     },
   });
   const dshEnvironment = prependExecutableDirectory(process.env, managedBin);
+  let dshHome = await detectDshHome(dshExecutable, profile, dshEnvironment);
+  const previousVersion = dshHome ? readInstalledConnectorVersion(dshHome, profile) : null;
+  if (!connectorUpgradeRequired(previousVersion, CONNECTOR_VERSION)) {
+    repairLegacyConnectorOverlay(dshHome!, profile);
+    return { changed: false, previousVersion };
+  }
+
+  mkdirSync(paths.packagesDir, { recursive: true, mode: 0o700 });
+  await runProcessLaunch({
+    command: process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    args: ['pack', connectorRuntime, '--pack-destination', paths.packagesDir, '--ignore-scripts'],
+  });
+  const packagePath = readdirSync(paths.packagesDir)
+    .filter((name) => name.endsWith('.tgz') && name.includes('dsh-easyremote-connector'))
+    .map((name) => join(paths.packagesDir, name))
+    .sort()
+    .at(-1);
+  if (!packagePath) throw new Error('Unable to build the Connector package');
   await runProcessLaunch(buildConnectorInstallLaunch(dshExecutable, profile, packagePath, dshEnvironment), true);
-  const dshHome = await detectDshHome(dshExecutable, profile, dshEnvironment);
+  dshHome = dshHome || await detectDshHome(dshExecutable, profile, dshEnvironment);
   if (!dshHome) throw new Error('Connector installed, but DSH_HOME could not be detected; set DSH_HOME and rerun setup');
+  const installedVersion = readInstalledConnectorVersion(dshHome, profile);
+  if (connectorUpgradeRequired(installedVersion, CONNECTOR_VERSION)) {
+    throw new Error(`DSH reported success, but Connector ${CONNECTOR_VERSION} is not active in profile ${profile}`);
+  }
+  repairLegacyConnectorOverlay(dshHome, profile);
+  return { changed: true, previousVersion };
+}
+
+function repairLegacyConnectorOverlay(dshHome: string, profile: string) {
   const patchPath = join(dshHome, 'profiles', profile, 'cordis.patch.yml');
   if (!existsSync(dirname(patchPath))) throw new Error(`DSH profile not found: ${profile}`);
   const existing = existsSync(patchPath) ? readFileSync(patchPath, 'utf8') : '';

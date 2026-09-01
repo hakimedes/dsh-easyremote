@@ -313,14 +313,25 @@ export class ApiClient {
   }
 
   private async request<T>(path: string, init: RequestOptions = {}, authorized = true): Promise<T> {
+    let failure: unknown;
     try {
       return await this.rawRequest<T>(path, init, authorized);
     } catch (error) {
-      if (!(error instanceof ApiError) || error.status !== 401 || !authorized || init.retryOnUnauthorized === false) throw error;
-      const nextAccessToken = await this.refresh();
-      if (!nextAccessToken) throw error;
-      return this.rawRequest<T>(path, init, authorized);
+      failure = error;
     }
+    const method = String(init.method || 'GET').toUpperCase();
+    if (!(failure instanceof ApiError) && (method === 'GET' || method === 'HEAD')) {
+      try {
+        return await this.rawRequest<T>(path, init, authorized);
+      } catch (error) {
+        failure = error;
+      }
+    }
+    if (failure instanceof ApiError && failure.status === 401 && authorized && init.retryOnUnauthorized !== false) {
+      const nextAccessToken = await this.refresh();
+      if (nextAccessToken) return this.rawRequest<T>(path, init, authorized);
+    }
+    throw failure;
   }
 }
 

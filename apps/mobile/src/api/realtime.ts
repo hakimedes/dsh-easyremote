@@ -83,13 +83,26 @@ export class RealtimeClient {
     };
 
     socket.onerror = () => {
-      this.handlers.onError?.("Can't reach DSH Remote");
+      if (this.socket !== socket || this.manuallyClosed) return;
+      this.socket = null;
+      socket.close();
+      this.scheduleReconnect();
     };
 
     socket.onclose = () => {
-      if (this.socket === socket) this.socket = null;
+      if (this.socket !== socket) return;
+      this.socket = null;
       if (!this.manuallyClosed) this.scheduleReconnect();
     };
+  }
+
+  reconnectNow() {
+    this.manuallyClosed = false;
+    this.clearReconnectTimer();
+    const staleSocket = this.socket;
+    this.socket = null;
+    staleSocket?.close();
+    void this.connect();
   }
 
   disconnect() {

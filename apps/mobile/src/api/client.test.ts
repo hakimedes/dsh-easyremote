@@ -101,6 +101,21 @@ describe('ApiClient session configuration', () => {
     vi.restoreAllMocks();
   });
 
+  it('retries one transient failure for a safe read request', async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new ApiClient();
+    client.setTokens({ accessToken: 'access', refreshToken: 'refresh' });
+
+    await expect(client.listNodes()).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('sends the selected agent preset when creating a session', async () => {
     let requestBody: unknown;
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

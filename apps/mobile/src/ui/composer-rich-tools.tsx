@@ -71,6 +71,7 @@ export function ComposerAttachmentButton({
 }) {
   const theme = useTheme();
   const searchWorkspaceReferences = useAppStore((state) => state.searchWorkspaceReferences);
+  const refreshNodes = useAppStore((state) => state.refreshNodes);
   const [menu, setMenu] = useState(false);
   const [workspace, setWorkspace] = useState(false);
   const [query, setQuery] = useState('');
@@ -163,7 +164,19 @@ export function ComposerAttachmentButton({
   function openMenu() {
     if (disabled) return;
     if (!supported) {
-      Alert.alert('Connector upgrade required', 'Update DSH EasyRemote Connector to attach files or reference workspace paths.');
+      Alert.alert(
+        'Restart the PC connector',
+        'On your computer, run:\n\nnpx @hakimedes/dsh-easyremote@latest\n\nThen restart DSH Web once. Return here and tap “Check again”; Photos and File will appear under +.',
+        [
+          { text: 'Later', style: 'cancel' },
+          {
+            text: 'Check again',
+            onPress: () => {
+              void refreshNodes().catch(() => Alert.alert('Still offline', 'Keep EasyRemote running on the computer, then try again.'));
+            },
+          },
+        ],
+      );
       return;
     }
     setMenu(true);
