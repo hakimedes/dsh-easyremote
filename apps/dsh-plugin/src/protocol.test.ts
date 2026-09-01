@@ -89,6 +89,48 @@ describe('normalizeDshEvent', () => {
     expect(JSON.stringify(normalized)).not.toContain('base64');
   });
 
+  it('publishes native images nested inside tool results even when DSH Web does not render them', () => {
+    const toolNames = new Map<string, string>();
+    normalizeDshEvent({
+      seq: 8,
+      time: 460,
+      type: 'tool/call',
+      data: { callId: 'call-image', name: 'generate_image', arguments: '{}' },
+    }, toolNames);
+    const normalized = normalizeDshEvent({
+      seq: 9,
+      time: 461,
+      type: 'tool/result',
+      data: {
+        message: {
+          content: [{
+            type: 'tool-result',
+            toolCallId: 'call-image',
+            content: [{
+              type: 'image',
+              attachment: {
+                attachmentId: 'sha256:tool-image', mediaType: 'image/png',
+                bytes: 64, width: 8, height: 8, name: 'generated.png',
+              },
+            }],
+          }],
+        },
+      },
+    }, toolNames);
+    expect(normalized?.event).toEqual({
+      type: 'tool.result',
+      data: {
+        toolCallId: 'call-image',
+        name: 'generate_image',
+        output: '',
+        blocks: [{
+          type: 'image', attachmentId: 'sha256:tool-image', mediaType: 'image/png',
+          bytes: 64, width: 8, height: 8, name: 'generated.png',
+        }],
+      },
+    });
+  });
+
   it('ignores internal events outside the public canonical contract', () => {
     expect(normalizeDshEvent({ seq: 8, time: 500, type: 'request/header', data: {} })).toBeNull();
   });

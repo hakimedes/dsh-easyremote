@@ -63,4 +63,46 @@ describe('reduceSessionEvents', () => {
     expect(next.messages[0]?.text).toBe('first event');
     expect(next.lastSourceSeq).toBe(0);
   });
+
+  it('keeps signed workspace media on the tool result that created it', () => {
+    const next = reduceSessionEvents(emptySessionView(summary), [
+      event(1, 'tool.result', {
+        name: 'write',
+        output: 'Created art/mickey.svg',
+        blocks: [{
+          type: 'workspace-media',
+          artifactId: 'signed.artifact',
+          mediaType: 'image/svg+xml',
+          bytes: 321,
+          name: 'mickey.svg',
+          path: 'art/mickey.svg',
+          source: 'tool',
+        }],
+      }),
+    ]);
+
+    expect(next.messages[0]).toMatchObject({
+      role: 'tool',
+      blocks: [{
+        type: 'workspace-media',
+        artifactId: 'signed.artifact',
+        path: 'art/mickey.svg',
+        source: 'tool',
+      }],
+    });
+  });
+
+  it('keeps the paths that must be hidden when a Markdown preview duplicates a tool artifact', () => {
+    const next = reduceSessionEvents(emptySessionView(summary), [
+      event(1, 'assistant.message', {
+        text: '![Mickey](art/mickey.svg)',
+        suppressedWorkspaceMediaPaths: ['art/mickey.svg'],
+      }),
+    ]);
+
+    expect(next.messages[0]).toMatchObject({
+      text: '![Mickey](art/mickey.svg)',
+      suppressedWorkspaceMediaPaths: ['art/mickey.svg'],
+    });
+  });
 });

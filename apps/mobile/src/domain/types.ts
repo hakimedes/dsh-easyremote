@@ -62,6 +62,15 @@ export type MessageBlock =
     height: number;
     name?: string;
   }
+  | {
+    type: 'workspace-media';
+    artifactId: string;
+    mediaType: 'image/svg+xml' | 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+    bytes: number;
+    name: string;
+    path: string;
+    source: 'tool' | 'markdown';
+  }
   | { type: 'workspace-reference'; path: string; kind: 'file' | 'dir' };
 
 export type AgentPreset = {
@@ -153,6 +162,7 @@ export type SessionMessage = {
   sourceSeq: number;
   streaming?: boolean;
   blocks?: MessageBlock[];
+  suppressedWorkspaceMediaPaths?: string[];
   tool?: {
     name: string;
     status: 'running' | 'complete' | 'failed';

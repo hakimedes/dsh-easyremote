@@ -294,4 +294,24 @@ export class UploadSpool {
     const path = this.attachmentPath(token);
     if (existsSync(path)) rmSync(path, { force: true });
   }
+
+  artifactPath(token: string) {
+    if (!/^[0-9a-f-]{36}$/i.test(token)) throw new UploadSpoolError('ARTIFACT_NOT_FOUND', 'Artifact export not found');
+    return join(this.root, `${token}.artifact`);
+  }
+
+  validatedArtifact(token: string) {
+    const path = this.artifactPath(token);
+    if (!existsSync(path)) throw new UploadSpoolError('ARTIFACT_NOT_FOUND', 'Artifact export not found');
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink() || !realpathSync(path).startsWith(`${this.root}${sep}`)) {
+      throw new UploadSpoolError('ARTIFACT_NOT_FOUND', 'Artifact export is invalid');
+    }
+    return { path, bytes: stat.size };
+  }
+
+  removeArtifact(token: string) {
+    const path = this.artifactPath(token);
+    if (existsSync(path)) rmSync(path, { force: true });
+  }
 }

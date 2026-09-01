@@ -15,7 +15,7 @@ const PORT = Number(process.env.PORT ?? '8787');
 const HOST = process.env.HOST ?? '127.0.0.1';
 const HUB_ENTRY = process.env.HUB_ENTRY ?? 'https://dsh.infomind.cc';
 const HUB_ENTRY_FILE = process.env.HUB_ENTRY_FILE;
-const HUB_VERSION = process.env.DSH_EASYREMOTE_VERSION ?? '0.3.3';
+const HUB_VERSION = process.env.DSH_EASYREMOTE_VERSION ?? '0.3.4';
 const ACCESS_TTL_SECONDS = 15 * 60;
 const REFRESH_TTL_MS = 60 * 24 * 60 * 60 * 1000;
 const COMMAND_TTL_MS = 30_000;
@@ -318,6 +318,7 @@ const pendingCommandTimeout = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingCommandResults = new Map<string, PendingCommandResult>();
 const rateBuckets = new Map<string, { count: number; windowStart: number }>();
 const uploadRateBuckets = new Map<string, { count: number; bytes: number; windowStart: number }>();
+const artifactRateBuckets = new Map<string, { count: number; bytes: number; inFlight: number; windowStart: number }>();
 
 function keySession(nodeId: string, sessionId: string) {
   return `${nodeId}:${sessionId}`;
@@ -586,6 +587,9 @@ function cleanupStaleRates() {
   for (const [key, value] of uploadRateBuckets.entries()) {
     if (now - value.windowStart > 60_000) uploadRateBuckets.delete(key);
   }
+  for (const [key, value] of artifactRateBuckets.entries()) {
+    if (value.inFlight === 0 && now - value.windowStart > 60_000) artifactRateBuckets.delete(key);
+  }
 }
 
 function cleanupCommandMetadata() {
@@ -615,6 +619,36 @@ function checkUploadRate(userId: string, bytes: number) {
   if (bucket.count > 180 || bucket.bytes > 160 * 1024 * 1024) {
     throw new UploadSpoolError('RATE_LIMITED', 'Upload rate limit exceeded');
   }
+}
+
+function acquireArtifactDownload(userId: string) {
+  const now = nowMs();
+  const bucket = artifactRateBuckets.get(userId) ?? { count: 0, bytes: 0, inFlight: 0, windowStart: now };
+  if (now - bucket.windowStart > 60_000) {
+    bucket.count = 0;
+    bucket.bytes = 0;
+    bucket.windowStart = now;
+  }
+  if (bucket.inFlight >= 4 || bucket.count >= 60 || bucket.bytes >= 160 * 1024 * 1024) {
+    throw new UploadSpoolError('RATE_LIMITED', 'Workspace media download rate limit exceeded');
+  }
+  bucket.count += 1;
+  bucket.inFlight += 1;
+  artifactRateBuckets.set(userId, bucket);
+  let released = false;
+  return {
+    addBytes(bytes: number) {
+      bucket.bytes += bytes;
+      if (bucket.bytes > 160 * 1024 * 1024) {
+        throw new UploadSpoolError('RATE_LIMITED', 'Workspace media byte limit exceeded');
+      }
+    },
+    release() {
+      if (released) return;
+      released = true;
+      bucket.inFlight = Math.max(0, bucket.inFlight - 1);
+    },
+  };
 }
 
 function requireOwnedNode(userId: string, nodeId: string) {
@@ -734,6 +768,14 @@ const httpError = {
   RATE_LIMITED: 429,
   UPLOAD_NOT_FOUND: 404,
   ATTACHMENT_NOT_FOUND: 404,
+  ARTIFACT_NOT_FOUND: 404,
+  ARTIFACT_INVALID: 400,
+  ARTIFACT_FORBIDDEN: 403,
+  ARTIFACT_PATH_INVALID: 404,
+  ARTIFACT_UNAVAILABLE: 404,
+  ARTIFACT_CHANGED: 409,
+  ARTIFACT_MEDIA_INVALID: 415,
+  ARTIFACT_TOO_LARGE: 413,
   UPLOAD_EXPIRED: 410,
   UPLOAD_OFFSET_MISMATCH: 409,
   UPLOAD_COMPLETE: 409,
@@ -1945,6 +1987,59 @@ app.get('/v1/nodes/:nodeId/sessions/:sessionId/attachments/:attachmentId', async
   } catch (err: any) {
     const statusCode = httpError[err?.code as keyof typeof httpError] ?? 500;
     return sendError(reply, statusCode, err?.code || 'INTERNAL_ERROR', err?.message || 'Could not export attachment');
+  }
+});
+
+app.get('/v1/nodes/:nodeId/sessions/:sessionId/artifacts/:artifactId', async (request, reply) => {
+  const params = request.params as { nodeId: string; sessionId: string; artifactId: string };
+  const authUser = await getAuthUserFromRequest(request.headers.authorization);
+  if (!authUser) return sendError(reply, 401, 'UNAUTHORIZED', 'Missing access token');
+  let exportToken: string | undefined;
+  let download: ReturnType<typeof acquireArtifactDownload> | undefined;
+  try {
+    requireOwnedNode(authUser.userId, params.nodeId);
+    download = acquireArtifactDownload(authUser.userId);
+    const dispatched = await dispatchCommand(
+      authUser,
+      params.nodeId,
+      params.sessionId,
+      'session.artifact.export',
+      uuidv7(),
+      { artifactId: params.artifactId },
+      true,
+    );
+    const frame = await dispatched.resultPromise;
+    if (!frame?.ok) throw frame?.error || { code: 'INTERNAL_ERROR', message: 'Artifact export failed' };
+    const result = objectValue(frame.result);
+    const artifact = objectValue(result?.artifact);
+    if (!result || typeof result.exportToken !== 'string' || !artifact || typeof artifact.mediaType !== 'string') {
+      throw { code: 'INTERNAL_ERROR', message: 'Node returned invalid artifact metadata' };
+    }
+    exportToken = result.exportToken;
+    const allowedMediaTypes = new Set(['image/svg+xml', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+    if (!allowedMediaTypes.has(artifact.mediaType)) {
+      throw { code: 'ARTIFACT_MEDIA_INVALID', message: 'Node returned an unsupported artifact media type' };
+    }
+    const exported = uploadSpool.validatedArtifact(exportToken);
+    const byteLimit = artifact.mediaType === 'image/svg+xml' ? 1_000_000 : 20 * 1024 * 1024;
+    if (exported.bytes > byteLimit || (typeof artifact.bytes === 'number' && artifact.bytes !== exported.bytes)) {
+      throw { code: exported.bytes > byteLimit ? 'ARTIFACT_TOO_LARGE' : 'INTERNAL_ERROR', message: 'Artifact byte count is invalid' };
+    }
+    download.addBytes(exported.bytes);
+    const stream = createReadStream(exported.path);
+    stream.once('close', () => {
+      uploadSpool.removeArtifact(exportToken as string);
+      download?.release();
+    });
+    reply.header('cache-control', 'private, max-age=31536000, immutable');
+    reply.header('content-length', String(exported.bytes));
+    reply.type(artifact.mediaType);
+    return reply.send(stream);
+  } catch (err: any) {
+    if (exportToken) uploadSpool.removeArtifact(exportToken);
+    download?.release();
+    const statusCode = httpError[err?.code as keyof typeof httpError] ?? 500;
+    return sendError(reply, statusCode, err?.code || 'INTERNAL_ERROR', err?.message || 'Could not export artifact');
   }
 });
 

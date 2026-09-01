@@ -3,13 +3,14 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { MessageBlock, SessionMessage } from '../domain/types';
 import { apiClient } from '../api/client';
-import { cachedAttachment } from '../storage/attachment-cache';
+import { cachedArtifact, cachedAttachment } from '../storage/attachment-cache';
 import { radii, spacing, type, useTheme } from '../ui/theme';
 import { contentFingerprint, parseRenderUiInput, splitRichContent } from './protocol';
 import { GenuiRenderer, type GenuiAction } from './renderer';
 import { SafeMarkdown } from './safe-markdown';
 import type { SessionPanel } from './panel';
 import { SafeImagePreview } from './safe-image-preview';
+import { withoutWorkspaceMediaMarkdown } from './workspace-media';
 
 export type RichMessageContext = {
   nodeId: string;
@@ -43,9 +44,53 @@ function AttachmentImage({ block, nodeId, sessionId }: { block: Extract<MessageB
   return <View style={styles.attachmentWrap}><SafeImagePreview uri={uri} mediaType={block.mediaType} aspectRatio={aspectRatio} accessibilityLabel={block.name || 'DSH image attachment'} frameStyle={styles.attachmentImage} />{block.name && <Text style={[styles.attachmentName, { color: theme.colors.muted }]}>{block.name}</Text>}</View>;
 }
 
+function WorkspaceMedia({ block, context }: { block: Extract<MessageBlock, { type: 'workspace-media' }>; context: RichMessageContext }) {
+  const theme = useTheme();
+  const [uri, setUri] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setFailed(false);
+    setUri(null);
+    void cachedArtifact({
+      api: apiClient,
+      hubId: apiClient.hubId || apiClient.server,
+      nodeId: context.nodeId,
+      sessionId: context.sessionId,
+      artifactId: block.artifactId,
+      mediaType: block.mediaType,
+    }).then((value) => { if (active) setUri(value); }).catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
+  }, [attempt, block.artifactId, block.mediaType, context.nodeId, context.sessionId]);
+
+  if (failed) {
+    const content = <><Ionicons name="cloud-offline-outline" size={20} color={theme.colors.faint} /><Text style={[styles.attachmentLabel, { color: theme.colors.muted }]}>{context.interactive ? 'Preview unavailable · tap to retry' : 'Preview unavailable while offline'}</Text><Text numberOfLines={1} style={[styles.attachmentName, { color: theme.colors.faint }]}>{block.path}</Text></>;
+    return context.interactive
+      ? <Pressable onPress={() => setAttempt((value) => value + 1)} accessibilityRole="button" accessibilityLabel={`Retry ${block.name} preview`} style={[styles.attachmentFailed, { backgroundColor: theme.colors.surface, borderColor: theme.colors.line }]}>{content}</Pressable>
+      : <View style={[styles.attachmentFailed, { backgroundColor: theme.colors.surface, borderColor: theme.colors.line }]}>{content}</View>;
+  }
+  if (!uri) return <View style={[styles.attachmentLoading, { backgroundColor: theme.colors.surface }]}><ActivityIndicator color={theme.colors.accent} /></View>;
+  return <View style={styles.attachmentWrap}><SafeImagePreview uri={uri} mediaType={block.mediaType} accessibilityLabel={`${block.name} workspace preview`} frameStyle={[styles.attachmentImage, context.compact && styles.compactImage]} /><Text numberOfLines={1} style={[styles.attachmentName, { color: theme.colors.muted }]}>{block.path}</Text></View>;
+}
+
+function RichBlocks({ message, context }: { message: SessionMessage; context: RichMessageContext }) {
+  const theme = useTheme();
+  return <>{message.blocks?.filter((block) => block.type !== 'text').map((block, index) => {
+    if (block.type === 'image') return <AttachmentImage key={`${block.attachmentId}:${index}`} block={block} nodeId={context.nodeId} sessionId={context.sessionId} />;
+    if (block.type === 'workspace-media') return <WorkspaceMedia key={`${block.artifactId}:${index}`} block={block} context={context} />;
+    return <View key={`${block.path}:${index}`} style={[styles.reference, { backgroundColor: theme.colors.surface, borderColor: theme.colors.line }]}><Ionicons name={block.kind === 'dir' ? 'folder-outline' : 'document-outline'} size={15} color={theme.colors.accent} /><Text numberOfLines={1} style={[styles.referenceText, { color: theme.colors.text }]}>{block.path}</Text></View>;
+  })}</>;
+}
+
 export function RichMessage({ message, visibleText, context }: { message: SessionMessage; visibleText: string; context: RichMessageContext }) {
   const theme = useTheme();
-  const source = visibleText || message.blocks?.filter((block) => block.type === 'text').map((block) => block.text).join('\n') || '';
+  const rawSource = visibleText || message.blocks?.filter((block) => block.type === 'text').map((block) => block.text).join('\n') || '';
+  const markdownMediaPaths = [
+    ...(message.blocks?.flatMap((block) => block.type === 'workspace-media' && block.source === 'markdown' ? [block.path] : []) || []),
+    ...(message.suppressedWorkspaceMediaPaths || []),
+  ];
+  const source = withoutWorkspaceMediaMarkdown(rawSource, markdownMediaPaths);
   const segments = useMemo(() => splitRichContent(source, Boolean(message.streaming)), [message.streaming, source]);
   return <View style={styles.richRoot}>
     {segments.map((segment, index) => {
@@ -55,9 +100,7 @@ export function RichMessage({ message, visibleText, context }: { message: Sessio
       const stateKey = `${apiClient.hubId || apiClient.server}:${context.sessionId}:${message.sourceSeq}:${segment.fenceIndex}:${contentFingerprint(segment.raw)}`;
       return <GenuiRenderer key={index} spec={segment.spec} stateKey={stateKey} interactive={Boolean(context.interactive) && !segment.partial} onAction={context.onAction} />;
     })}
-    {message.blocks?.filter((block) => block.type !== 'text').map((block, index) => block.type === 'image'
-      ? <AttachmentImage key={`${block.attachmentId}:${index}`} block={block} nodeId={context.nodeId} sessionId={context.sessionId} />
-      : <View key={`${block.path}:${index}`} style={[styles.reference, { backgroundColor: theme.colors.surface, borderColor: theme.colors.line }]}><Ionicons name={block.kind === 'dir' ? 'folder-outline' : 'document-outline'} size={15} color={theme.colors.accent} /><Text numberOfLines={1} style={[styles.referenceText, { color: theme.colors.text }]}>{block.path}</Text></View>)}
+    <RichBlocks message={message} context={context} />
   </View>;
 }
 
@@ -81,6 +124,7 @@ const styles = StyleSheet.create({
   diagnosticCode: { fontFamily: 'monospace', fontSize: 11, lineHeight: 17 },
   attachmentWrap: { gap: 5 },
   attachmentImage: { width: '100%', minHeight: 180, maxHeight: 420, borderRadius: radii.md },
+  compactImage: { minHeight: 120, maxHeight: 220 },
   attachmentName: { fontSize: type.micro, lineHeight: 16 },
   attachmentLoading: { minHeight: 180, borderRadius: radii.md, alignItems: 'center', justifyContent: 'center' },
   attachmentFailed: { minHeight: 80, borderRadius: radii.md, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center', gap: 6, padding: spacing.md },

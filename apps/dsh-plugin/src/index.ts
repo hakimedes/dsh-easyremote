@@ -23,12 +23,19 @@ import {
   type UploadDescriptor,
 } from './mobile-content.js';
 import { normalizeDshEvent, type DshEvent } from './protocol.js';
+import {
+  enrichWorkspaceMediaEvent,
+  LocalWorkspaceFileSystem,
+  WorkspaceArtifactBridge,
+  WorkspaceMediaTracker,
+  type WorkspaceFileSystem,
+} from './workspace-media.js';
 
 export const name = 'dsh-easyremote-connector';
 export const inject = ['webServer', 'agents', 'sessionQuery', 'agentDefaultModel', 'approval', 'apiProxy', 'systemPrompt'];
 
 const PROTOCOL_VERSION = 1;
-const PLUGIN_VERSION = '0.3.3';
+const PLUGIN_VERSION = '0.3.4';
 const HEARTBEAT_MS = 15_000;
 const APPROVAL_TTL_MS = 10 * 60_000;
 const PAIR_POLL_MS = 800;
@@ -257,6 +264,9 @@ class HubConnector {
   private readonly pendingApprovals = new Map<string, PendingApproval>();
   private readonly commandCache = new CommandReplayCache<CommandResultFrame>(500);
   private readonly toolNamesBySession = new Map<string, Map<string, string>>();
+  private readonly mediaTrackersBySession = new Map<string, WorkspaceMediaTracker>();
+  private readonly sessionEventQueues = new Map<string, Promise<void>>();
+  private readonly sessionCwds = new Map<string, string>();
   private readonly pendingMobileRpcIds = new Set<string>();
   private readonly pendingMobileMessageIds = new Set<string>();
   private readonly mobileGenuiAgents = new WeakSet<object>();
@@ -267,6 +277,8 @@ class HubConnector {
   private readonly dshApi: DshApiBridge;
   private readonly webServer: any;
   private readonly logger: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void };
+  private workspaceArtifactBridge: WorkspaceArtifactBridge | null = null;
+  private readonly workspaceFileSystem: WorkspaceFileSystem;
 
   constructor(private readonly ctx: any) {
     this.configPath = connectorConfigPath();
@@ -282,12 +294,19 @@ class HubConnector {
     const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh');
     this.identityPath = join(dshHome, 'remote-hub', 'node-identity.json');
     this.identity = this.loadIdentity();
+    const reflectedFileSystem = ctx.reflect?.get?.('fs', false);
+    this.workspaceFileSystem = reflectedFileSystem
+      && typeof reflectedFileSystem.resolve === 'function'
+      && typeof reflectedFileSystem.readBytes === 'function'
+      ? reflectedFileSystem as WorkspaceFileSystem
+      : new LocalWorkspaceFileSystem();
     this.agents = ctx.get('agents');
     this.sessionQuery = ctx.get('sessionQuery');
     this.agentDefaultModel = ctx.get('agentDefaultModel');
     this.dshApi = new DshApiBridge(ctx.get('apiProxy'), () => uuidv7());
     this.webServer = ctx.get('webServer');
     this.logger = ctx.logger || console;
+    this.configureWorkspaceArtifacts();
   }
 
   start() {
@@ -388,6 +407,7 @@ class HubConnector {
     this.nodeName = next.nodeName;
     this.defaultCwd = next.defaultCwd;
     this.spoolDir = next.spoolDir;
+    if (runtimeCapabilityChanged) this.configureWorkspaceArtifacts();
     if (!endpointChanged && !publicOriginChanged && !nodeNameChanged && !runtimeCapabilityChanged) return;
     if (shouldRotateRecoveryAfterReconnect(endpointChanged || publicOriginChanged, this.identity.nodeId)) {
       this.rotateRecoveryOnAck = true;
@@ -426,6 +446,20 @@ class HubConnector {
     writeFileSync(tempPath, `${JSON.stringify(identity, null, 2)}\n`, { mode: 0o600 });
     renameSync(tempPath, this.identityPath);
     chmodSync(this.identityPath, 0o600);
+  }
+
+  private configureWorkspaceArtifacts() {
+    if (!this.spoolDir) {
+      this.workspaceArtifactBridge = null;
+      return;
+    }
+    const bridge = new WorkspaceArtifactBridge({
+      secret: this.identity.nodeSecret,
+      fileSystem: this.workspaceFileSystem,
+      spoolDir: this.spoolDir,
+    });
+    bridge.setSessionCwdResolver((sessionId) => this.sessionCwd(sessionId));
+    this.workspaceArtifactBridge = bridge;
   }
 
   private publishPairingState() {
@@ -724,6 +758,7 @@ class HubConnector {
           'approval.respond',
           'workspace.references',
           ...(this.spoolDir ? ['workspace.upload'] : []),
+          ...(this.workspaceArtifactBridge ? ['session.artifact.export'] : []),
           ...(this.spoolDir && this.dshApi.supportsPromptParts()
             ? ['session.prompt.parts', 'session.attachment.export']
             : []),
@@ -794,21 +829,47 @@ class HubConnector {
 
   private forwardSessionEvent(session: any, source: DshEvent) {
     if (!session?.id || !this.identity.nodeId) return;
-    const toolNames = this.toolNamesBySession.get(session.id) ?? new Map<string, string>();
-    this.toolNamesBySession.set(session.id, toolNames);
-    const normalized = normalizeDshEvent(source, toolNames);
-    if (source.type === 'step/end' || source.type === 'turn/end') {
-      const agent = this.agents.get(session.id);
-      if (agent) this.mobileGenuiAgents.delete(agent);
-    }
-    if (!normalized) return;
-    this.send({
-      v: 1,
-      kind: 'session.event',
-      nodeId: this.identity.nodeId,
-      sessionId: session.id,
-      ...normalized,
+    const sessionId = String(session.id);
+    const cwd = typeof session?.header?.cwd === 'string' ? session.header.cwd : this.sessionCwd(sessionId);
+    if (cwd) this.sessionCwds.set(sessionId, cwd);
+    const previous = this.sessionEventQueues.get(sessionId) ?? Promise.resolve();
+    const queued = previous.then(async () => {
+      const toolNames = this.toolNamesBySession.get(sessionId) ?? new Map<string, string>();
+      const mediaTracker = this.mediaTrackersBySession.get(sessionId) ?? new WorkspaceMediaTracker();
+      this.toolNamesBySession.set(sessionId, toolNames);
+      this.mediaTrackersBySession.set(sessionId, mediaTracker);
+      const normalized = normalizeDshEvent(source, toolNames);
+      if (source.type === 'step/end' || source.type === 'turn/end') {
+        const agent = this.agents.get(sessionId);
+        if (agent) this.mobileGenuiAgents.delete(agent);
+      }
+      if (!normalized) {
+        mediaTracker.mediaPathsFor(source);
+        return;
+      }
+      const enriched = this.workspaceArtifactBridge && cwd
+        ? await enrichWorkspaceMediaEvent({
+          tracker: mediaTracker,
+          bridge: this.workspaceArtifactBridge,
+          sessionId,
+          cwd,
+          source,
+          canonical: normalized,
+        })
+        : normalized;
+      this.send({
+        v: 1,
+        kind: 'session.event',
+        nodeId: this.identity.nodeId,
+        sessionId,
+        ...enriched,
+      });
+    }).catch((error) => {
+      this.logger.warn(`[dsh-easyremote] session event normalization failed: ${error instanceof Error ? error.message : String(error)}`);
+    }).finally(() => {
+      if (this.sessionEventQueues.get(sessionId) === queued) this.sessionEventQueues.delete(sessionId);
     });
+    this.sessionEventQueues.set(sessionId, queued);
   }
 
   private async handleCommand(frame: CommandFrame) {
@@ -896,6 +957,11 @@ class HubConnector {
         return this.exportAttachment(
           String(frame.sessionId || ''),
           String(frame.payload.attachmentId || ''),
+        );
+      case 'session.artifact.export':
+        return this.exportWorkspaceArtifact(
+          String(frame.sessionId || ''),
+          String(frame.payload.artifactId || ''),
         );
       case 'session.steer': {
         const agent = await this.ensureAgent(String(frame.sessionId || ''));
@@ -1039,15 +1105,37 @@ class HubConnector {
     return { exportToken, attachment: value.attachment };
   }
 
+  private async exportWorkspaceArtifact(sessionId: string, artifactId: string) {
+    if (!this.workspaceArtifactBridge) {
+      throw Object.assign(new Error('Workspace artifact export is not configured'), { code: 'CAPABILITY_UNAVAILABLE' });
+    }
+    return this.workspaceArtifactBridge.export(sessionId, artifactId);
+  }
+
+  private sessionCwd(sessionId: string) {
+    const cached = this.sessionCwds.get(sessionId);
+    if (cached) return cached;
+    const agent = this.agents?.get?.(sessionId);
+    const cwd = typeof agent?.session?.header?.cwd === 'string'
+      ? agent.session.header.cwd
+      : undefined;
+    if (cwd) this.sessionCwds.set(sessionId, cwd);
+    return cwd;
+  }
+
   private async ensureAgent(sessionId: string) {
     if (!sessionId) throw new Error('session id is missing');
     const live = this.agents.get(sessionId);
-    if (live) return live;
+    if (live) {
+      if (typeof live?.session?.header?.cwd === 'string') this.sessionCwds.set(sessionId, live.session.header.cwd);
+      return live;
+    }
     const handle = await this.agents.resume({
       resumeSessionId: sessionId,
       agentOptions: this.defaultAgentOptions(),
     });
     this.ownedAgentHandles.set(sessionId, handle);
+    if (typeof handle.agent?.session?.header?.cwd === 'string') this.sessionCwds.set(sessionId, handle.agent.session.header.cwd);
     return handle.agent;
   }
 
@@ -1064,6 +1152,7 @@ class HubConnector {
     });
     const agent = this.agents.get(created.sessionId);
     if (!agent) throw new Error('created session agent is unavailable');
+    this.sessionCwds.set(created.sessionId, cwd);
     return this.sessionSummary(agent.session, 'New Session', agent.status);
   }
 
@@ -1101,9 +1190,29 @@ class HubConnector {
     if (!snapshot) throw new Error('session not found');
     const title = await this.readTitle(sessionId);
     const toolNames = new Map<string, string>();
-    const events = (snapshot.events as DshEvent[])
-      .map((event) => normalizeDshEvent(event, toolNames))
-      .filter((event): event is NonNullable<typeof event> => event !== null);
+    const mediaTracker = new WorkspaceMediaTracker();
+    const cwd = typeof snapshot.session?.cwd === 'string'
+      ? snapshot.session.cwd
+      : this.sessionCwd(sessionId);
+    if (cwd) this.sessionCwds.set(sessionId, cwd);
+    const events: Array<NonNullable<ReturnType<typeof normalizeDshEvent>>> = [];
+    for (const source of snapshot.events as DshEvent[]) {
+      const normalized = normalizeDshEvent(source, toolNames);
+      if (!normalized) {
+        mediaTracker.mediaPathsFor(source);
+        continue;
+      }
+      events.push(this.workspaceArtifactBridge && cwd
+        ? await enrichWorkspaceMediaEvent({
+          tracker: mediaTracker,
+          bridge: this.workspaceArtifactBridge,
+          sessionId,
+          cwd,
+          source,
+          canonical: normalized,
+        })
+        : normalized);
+    }
     return {
       session: this.sessionSummary(
         { header: snapshot.session, events: snapshot.events },

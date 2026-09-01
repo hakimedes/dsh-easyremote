@@ -68,6 +68,10 @@ function publicBlocks(value: unknown): Array<Record<string, unknown>> {
           ...(typeof attachment.name === 'string' ? { name: attachment.name } : {}),
         });
       }
+      continue;
+    }
+    if (block.type === 'tool-result') {
+      blocks.push(...publicBlocks(block.content));
     }
   }
   return blocks;
@@ -138,12 +142,14 @@ export function normalizeDshEvent(
           ? source.data.callId
           : '';
       const output = textFromBlocks(block?.content ?? message?.content);
+      const blocks = publicBlocks(block?.content ?? message?.content).filter((item) => item.type !== 'text');
       const name = toolNames.get(toolCallId) ?? 'DSH tool';
       if (toolCallId) toolNames.delete(toolCallId);
       return envelope('tool.result', {
         toolCallId,
         name,
         output,
+        ...(blocks.length ? { blocks } : {}),
         ...(source.data.error || block?.isError ? { error: true } : {}),
       });
     }

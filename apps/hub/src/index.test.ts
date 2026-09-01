@@ -374,6 +374,7 @@ describe('DSH Hub P0 integration', () => {
       node: { id: nodeId, name: 'Content Node', platform: 'darwin', arch: 'arm64', pluginVersion: '0.3.0', dshVersion: 'test' },
       capabilities: [
         'session.followup', 'session.prompt.parts', 'session.attachment.export',
+        'session.artifact.export',
         'workspace.references', 'workspace.upload',
       ],
     }));
@@ -381,6 +382,7 @@ describe('DSH Hub P0 integration', () => {
 
     let followupPayload: any;
     let followupCommands = 0;
+    let artifactExportToken = '';
     nodeWs.on('message', (raw) => {
       const command = JSON.parse(raw.toString());
       if (command.kind !== 'command') return;
@@ -411,6 +413,26 @@ describe('DSH Hub P0 integration', () => {
           result: {
             exportToken,
             attachment: { attachmentId: 'sha256:opaque', mediaType: 'image/png', bytes: bytes.length, width: 2, height: 2 },
+          },
+        }));
+      }
+      if (command.action === 'session.artifact.export') {
+        const exportToken = uuidv7();
+        artifactExportToken = exportToken;
+        const bytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>');
+        mkdirSync(spoolDir, { recursive: true });
+        writeFileSync(join(spoolDir, `${exportToken}.artifact`), bytes, { mode: 0o600 });
+        nodeWs.send(JSON.stringify({
+          v: 1, kind: 'command.result', commandId: command.commandId, requestId: command.requestId, ok: true,
+          result: {
+            exportToken,
+            artifact: {
+              artifactId: command.payload.artifactId,
+              mediaType: 'image/svg+xml',
+              bytes: bytes.length,
+              name: 'mickey.svg',
+              path: 'art/mickey.svg',
+            },
           },
         }));
       }
@@ -469,6 +491,16 @@ describe('DSH Hub P0 integration', () => {
     expect(attachment.status).toBe(200);
     expect(attachment.headers.get('content-type')).toContain('image/png');
     expect(Buffer.from(await attachment.arrayBuffer()).toString()).toBe('authorized-image-bytes');
+
+    const artifact = await fetch(`${baseUrl}/v1/nodes/${nodeId}/sessions/session-rich/artifacts/${encodeURIComponent('signed.artifact.token')}`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    if (!artifact.ok) throw new Error(`artifact ${artifact.status}: ${await artifact.text()}`);
+    expect(artifact.status).toBe(200);
+    expect(artifact.headers.get('content-type')).toContain('image/svg+xml');
+    expect(artifact.headers.get('cache-control')).toBe('private, max-age=31536000, immutable');
+    expect(Buffer.from(await artifact.arrayBuffer()).toString()).toContain('<circle r="4"/>');
+    expect(existsSync(join(spoolDir, `${artifactExportToken}.artifact`))).toBe(false);
 
     const databaseBytes = readFileSync(dbPath);
     expect(databaseBytes.includes(privateBytes)).toBe(false);

@@ -11,6 +11,7 @@ import { ComposerAttachmentButton, ComposerSelections } from './composer-rich-to
 import { RichMessage, ToolGenui } from '../genui/rich-message';
 import type { GenuiAction } from '../genui/renderer';
 import { parseRenderUiInput } from '../genui/protocol';
+import { withoutWorkspaceMediaMarkdown } from '../genui/workspace-media';
 
 export function MessageRow({ message, nodeId = '', sessionId = '', interactive = true, compact = false, onAction }: { message: SessionMessage; nodeId?: string; sessionId?: string; interactive?: boolean; compact?: boolean; onAction?: (event: GenuiAction) => void | Promise<void> }) {
   const theme = useTheme();
@@ -32,6 +33,12 @@ export function MessageRow({ message, nodeId = '', sessionId = '', interactive =
     return () => clearTimeout(timer);
   }, [message.role, message.text, visibleText]);
 
+  const onlySuppressedMarkdown = message.role === 'assistant'
+    && Boolean(message.suppressedWorkspaceMediaPaths?.length)
+    && !withoutWorkspaceMediaMarkdown(visibleText, message.suppressedWorkspaceMediaPaths || []).trim()
+    && !message.blocks?.some((block) => block.type !== 'text');
+  if (onlySuppressedMarkdown) return null;
+
   if (message.role === 'tool' && message.tool) {
     if (message.tool.name === 'render_ui' && parseRenderUiInput(message.tool.input)) {
       return <ToolGenui message={message} context={{ nodeId, sessionId, interactive, compact, onAction }} />;
@@ -44,7 +51,7 @@ export function MessageRow({ message, nodeId = '', sessionId = '', interactive =
         <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={17} color={theme.colors.faint} />
       </View>
       {expanded && <View style={[styles.toolDetail, { borderTopColor: theme.colors.line }]}>{message.tool.input && <Text selectable style={[styles.toolOutput, { color: theme.colors.muted }]}>{message.tool.input}</Text>}{message.tool.output && <Text selectable style={[styles.toolOutput, { color: theme.colors.text }]}>{message.tool.output}</Text>}</View>}
-    </Pressable></View>;
+    </Pressable>{message.blocks?.length ? <View style={styles.toolMedia}><RichMessage message={message} visibleText="" context={{ nodeId, sessionId, interactive, compact, onAction }} /></View> : null}</View>;
   }
 
   const isUser = message.role === 'user';
@@ -132,6 +139,7 @@ const styles = StyleSheet.create({
   messageText: { fontSize: type.body, lineHeight: 24 },
   toolWrap: { width: '100%', marginBottom: spacing.md, paddingLeft: 38 },
   toolCard: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radii.md, overflow: 'hidden' },
+  toolMedia: { marginTop: spacing.sm },
   toolHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.sm },
   toolIcon: { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   toolCopy: { flex: 1, minWidth: 0, gap: 1 },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionMessage } from '../domain/types';
 import { collectSessionPanel } from './panel';
+import { withoutWorkspaceMediaMarkdown } from './workspace-media';
 
 describe('session panel collection', () => {
   it('replaces and appends settled panel specs while ignoring streaming partials', () => {
@@ -11,5 +12,19 @@ describe('session panel collection', () => {
     ];
     const panel = collectSessionPanel(messages, 'hub', 'session');
     expect(panel?.spec.items.map((item) => item.content)).toEqual(['A', 'B']);
+  });
+});
+
+describe('workspace media markdown', () => {
+  it('hides only explicit markdown images already represented by an artifact block', () => {
+    expect(withoutWorkspaceMediaMarkdown(
+      'Preview:\n\n![Mickey](art/mickey.svg)\n\nKeep `art/mickey.svg` for later.',
+      ['art/mickey.svg'],
+    )).toBe('Preview:\n\nKeep `art/mickey.svg` for later.');
+  });
+
+  it('does not remove external images or unrelated workspace paths', () => {
+    const source = '![Remote](https://example.com/a.png)\n![Other](art/other.svg)';
+    expect(withoutWorkspaceMediaMarkdown(source, ['art/mickey.svg'])).toBe(source);
   });
 });

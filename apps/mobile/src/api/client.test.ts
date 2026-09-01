@@ -116,6 +116,14 @@ describe('ApiClient session configuration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('builds an authenticated workspace artifact URL without exposing a local path', () => {
+    const client = new ApiClient();
+    client.hydrate({ schemaVersion: 1, server: 'https://my-hub.example', refreshToken: 'refresh' });
+    expect(client.artifactUrl('node/1', 'session 1', 'signed.token')).toBe(
+      'https://my-hub.example/v1/nodes/node%2F1/sessions/session%201/artifacts/signed.token',
+    );
+  });
+
   it('sends the selected agent preset when creating a session', async () => {
     let requestBody: unknown;
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

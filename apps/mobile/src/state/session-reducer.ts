@@ -11,6 +11,12 @@ function messageId(event: SessionEvent) {
   return `${event.nodeId}:${event.sessionId}:${event.sourceSeq}`;
 }
 
+function suppressedPathsFrom(data: Record<string, unknown>) {
+  if (!Array.isArray(data.suppressedWorkspaceMediaPaths)) return undefined;
+  const paths = data.suppressedWorkspaceMediaPaths.filter((value): value is string => typeof value === 'string' && Boolean(value));
+  return paths.length ? paths : undefined;
+}
+
 function blocksFrom(data: Record<string, unknown>): MessageBlock[] | undefined {
   if (!Array.isArray(data.blocks)) return undefined;
   const blocks = data.blocks.flatMap((value): MessageBlock[] => {
@@ -32,6 +38,25 @@ function blocksFrom(data: Record<string, unknown>): MessageBlock[] | undefined {
     if (block.type === 'workspace-reference' && typeof block.path === 'string') {
       return [{ type: 'workspace-reference', path: block.path, kind: block.kind === 'dir' ? 'dir' : 'file' }];
     }
+    const workspaceMediaTypes = new Set(['image/svg+xml', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+    if (
+      block.type === 'workspace-media'
+      && typeof block.artifactId === 'string'
+      && typeof block.mediaType === 'string'
+      && workspaceMediaTypes.has(block.mediaType)
+      && typeof block.bytes === 'number'
+      && typeof block.name === 'string'
+      && typeof block.path === 'string'
+      && (block.source === 'tool' || block.source === 'markdown')
+    ) return [{
+      type: 'workspace-media',
+      artifactId: block.artifactId,
+      mediaType: block.mediaType as Extract<MessageBlock, { type: 'workspace-media' }>['mediaType'],
+      bytes: block.bytes,
+      name: block.name,
+      path: block.path,
+      source: block.source,
+    }];
     return [];
   });
   return blocks.length ? blocks : undefined;
@@ -40,7 +65,7 @@ function blocksFrom(data: Record<string, unknown>): MessageBlock[] | undefined {
 export function eventToMessage(event: SessionEvent): SessionMessage | null {
   const text = textFrom(event.event.data);
   const timestamp = event.createdAt || Date.now();
-  if (event.event.type === 'user.message') return { id: messageId(event), role: 'user', text, timestamp, sourceSeq: event.sourceSeq, ...(blocksFrom(event.event.data) ? { blocks: blocksFrom(event.event.data) } : {}) };
+  if (event.event.type === 'user.message') return { id: messageId(event), role: 'user', text, timestamp, sourceSeq: event.sourceSeq, ...(blocksFrom(event.event.data) ? { blocks: blocksFrom(event.event.data) } : {}), ...(suppressedPathsFrom(event.event.data) ? { suppressedWorkspaceMediaPaths: suppressedPathsFrom(event.event.data) } : {}) };
   if (event.event.type === 'assistant.delta' || event.event.type === 'assistant.message') {
     return {
       id: messageId(event),
@@ -50,6 +75,7 @@ export function eventToMessage(event: SessionEvent): SessionMessage | null {
       sourceSeq: event.sourceSeq,
       streaming: event.event.type === 'assistant.delta',
       ...(blocksFrom(event.event.data) ? { blocks: blocksFrom(event.event.data) } : {}),
+      ...(suppressedPathsFrom(event.event.data) ? { suppressedWorkspaceMediaPaths: suppressedPathsFrom(event.event.data) } : {}),
     };
   }
   if (event.event.type === 'tool.call' || event.event.type === 'tool.result') {
@@ -57,7 +83,8 @@ export function eventToMessage(event: SessionEvent): SessionMessage | null {
     const input = typeof event.event.data.input === 'string' ? event.event.data.input : undefined;
     const output = typeof event.event.data.output === 'string' ? event.event.data.output : text || undefined;
     const status = event.event.type === 'tool.call' ? 'running' : event.event.data.error ? 'failed' : 'complete';
-    return { id: messageId(event), role: 'tool', text: '', timestamp, sourceSeq: event.sourceSeq, tool: { name, input, output, status } };
+    const blocks = blocksFrom(event.event.data);
+    return { id: messageId(event), role: 'tool', text: '', timestamp, sourceSeq: event.sourceSeq, tool: { name, input, output, status }, ...(blocks ? { blocks } : {}) };
   }
   return null;
 }
@@ -98,6 +125,7 @@ export function reduceSessionEvents(view: SessionView, events: SessionEvent[]): 
           sourceSeq: message.sourceSeq,
           streaming: false,
           ...(message.blocks ? { blocks: message.blocks } : {}),
+          ...(message.suppressedWorkspaceMediaPaths ? { suppressedWorkspaceMediaPaths: message.suppressedWorkspaceMediaPaths } : {}),
         };
         continue;
       }

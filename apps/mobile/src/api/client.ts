@@ -253,6 +253,10 @@ export class ApiClient {
     return apiUrl(`/v1/nodes/${encodeURIComponent(nodeId)}/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`, this.state.server);
   }
 
+  artifactUrl(nodeId: string, sessionId: string, artifactId: string) {
+    return apiUrl(`/v1/nodes/${encodeURIComponent(nodeId)}/sessions/${encodeURIComponent(sessionId)}/artifacts/${encodeURIComponent(artifactId)}`, this.state.server);
+  }
+
   steer(nodeId: string, sessionId: string, instruction: string, requestId = uuidv7()) {
     return this.request(`/v1/nodes/${encodeURIComponent(nodeId)}/sessions/${encodeURIComponent(sessionId)}/steer`, {
       method: 'POST',
